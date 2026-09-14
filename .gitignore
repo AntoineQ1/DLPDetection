@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Certificates
+config/certs/*.key
+config/certs/*.pem
+config/certs/*.crt
+!config/certs/.gitkeep
