@@ -224,3 +224,6 @@ config/certs/*.key
 config/certs/*.pem
 config/certs/*.crt
 !config/certs/.gitkeep
+
+# VSCode settings
+.vscode/settings.json
