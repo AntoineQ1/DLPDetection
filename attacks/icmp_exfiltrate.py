@@ -1,0 +1,1 @@
+# TODO: Implement client-side ICMP covert channel exfiltration using Scapy
