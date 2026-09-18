@@ -1,0 +1,38 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway.Dockerfile
+    container_name: dlp-gateway
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.send_redirects=0
+    volumes:
+      - ./config/certs:/config/certs:ro
+    networks:
+      dlp_net:
+        ipv4_address: 172.20.0.2
+
+  victim:
+    build:
+      context: .
+      dockerfile: docker/victim.Dockerfile
+    container_name: dlp-victim
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - gateway
+    networks:
+      dlp_net:
+        ipv4_address: 172.20.0.3
+    command: >
+      sh -c "ip route replace default via 172.20.0.2 && sleep infinity"
+
+networks:
+  dlp_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

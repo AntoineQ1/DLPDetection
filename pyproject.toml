@@ -6,10 +6,13 @@ dependencies = []
 
 [dependency-groups]
 victim = [
+    "requests",
 ]
 
 gateway = [
+    "mitmproxy",
 ]
 
 dev = [
+    "pytest",
 ]

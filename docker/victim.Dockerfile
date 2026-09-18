@@ -10,6 +10,13 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" 
 
+# Install essential packages for network diagnostics and security
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    iproute2 \
+    iputils-ping
+
 WORKDIR /app
 
 # Dynamic installation of Python dependencies using uv
