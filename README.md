@@ -64,6 +64,12 @@ Course project — DD2391 Cybersecurity, KTH.
 - [uv](https://docs.astral.sh/uv/) (optional, for local development and offline testing)
 
 ### 2. Launch the Lab
+
+If you have never launched the lab, first create the certificate for `mitmproxy` :
+```bash
+./config/certs/generate_ca.sh
+```
+
 Start all containers in detached mode:
 ```bash
 docker compose up -d
