@@ -6,33 +6,73 @@ services:
     container_name: dlp-gateway
     cap_add:
       - NET_ADMIN
+      - NET_RAW
     sysctls:
       - net.ipv4.ip_forward=1
       - net.ipv4.conf.all.send_redirects=0
     volumes:
       - ./config/certs:/config/certs:ro
+      - ./detection:/app/detection:ro
     networks:
-      dlp_net:
+      internal_net:
         ipv4_address: 172.20.0.2
+      external_net:
+        ipv4_address: 172.21.0.2
+  covert-detector:
+      build:
+        context: .
+        dockerfile: docker/gateway.Dockerfile
+      image: dlp-gateway:latest
+      container_name: dlp-covert-detector
+      network_mode: "service:gateway"
+      depends_on:
+        - gateway
+      volumes:
+        - ./detection:/app/detection:ro
+      entrypoint: ["/app/.venv/bin/python", "-u", "-m", "detection.covert_channel.sniffer"]
 
   victim:
     build:
       context: .
       dockerfile: docker/victim.Dockerfile
     container_name: dlp-victim
+    environment:
+      - GATEWAY_IP=172.20.0.2
     cap_add:
       - NET_ADMIN
     depends_on:
       - gateway
+    volumes:
+      - ./attacks:/app/attacks:ro
+      - ./tests:/app/tests:ro
+      - ./evaluation:/app/evaluation:ro
     networks:
-      dlp_net:
+      internal_net:
         ipv4_address: 172.20.0.3
-    command: >
-      sh -c "ip route replace default via 172.20.0.2 && sleep infinity"
+  attacker:
+      build:
+        context: .
+        dockerfile: docker/attacker.Dockerfile
+      container_name: dlp-attacker
+      cap_add:
+        - NET_ADMIN
+        - NET_RAW
+      networks:
+        external_net:
+          ipv4_address: 172.21.0.10
+      volumes:
+        - ./servers:/app/servers:ro
+        - ./attacks:/app/attacks:ro
+      command: ["sleep", "infinity"]
 
 networks:
-  dlp_net:
+  internal_net:
     driver: bridge
     ipam:
       config:
         - subnet: 172.20.0.0/16
+  external_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

@@ -9,10 +9,19 @@ victim = [
     "requests",
 ]
 
+attacker = [
+    "scapy",
+]
+
+
 gateway = [
     "mitmproxy",
+    "scapy",
 ]
 
 dev = [
+    { include-group = "gateway" },
+    { include-group = "victim" },
+    { include-group = "attacker" },
     "pytest",
 ]

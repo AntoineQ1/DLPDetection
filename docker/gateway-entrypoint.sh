@@ -17,5 +17,17 @@ iptables -t nat -A PREROUTING -p tcp --dport 443 -j REDIRECT --to-port 8080
 # Masquerade other outgoing traffic to allow responses to be routed back to the container
 iptables -t nat -A POSTROUTING -j MASQUERADE
 
-# Pursue with the final command
-exec "$@"
+# Let the user override the default command if arguments are provided
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
+# Enable addon if available
+ADDON_OPT=""
+if [ -f /app/detection/l7_web/addon.py ]; then
+    echo "[gateway] Chargement de l'addon L7 Web..."
+    ADDON_OPT="-s /app/detection/l7_web/addon.py"
+fi
+
+# Run mitmdump
+exec mitmdump --mode transparent --showhost --listen-port 8080 "$ADDON_OPT"

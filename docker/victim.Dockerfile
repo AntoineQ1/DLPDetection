@@ -6,9 +6,10 @@ FROM python:${PYTHON_VERSION}
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 # Environment variables for Python
-ENV PYTHONUNBUFFERED=1 \ 
+ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/.venv/bin:$PATH" 
+    PYTHONPATH="/app" \
+    PATH="/app/.venv/bin:$PATH"
 
 # Install essential packages for network diagnostics and security
 RUN apt-get update && apt-get install -y --no-install-recommends \
