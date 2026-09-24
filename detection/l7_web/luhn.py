@@ -1,14 +1,8 @@
 """Credit-card number detection with Luhn validation (Workstream B).
 
-Owner: <assign in team split>
-
 Two-stage pipeline:
     1. Regex pre-filter: 13-19 digit runs, optionally split by spaces/dashes.
     2. `luhn_valid(digits)` check on the normalized digit string.
-
-Only stage-2 hits become Findings, which keeps the FP rate down when
-scanning bodies that happen to contain long numeric runs (order ids,
-tracking numbers, hex-encoded blobs).
 """
 
 from __future__ import annotations
