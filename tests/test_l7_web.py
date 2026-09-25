@@ -131,3 +131,11 @@ def test_scan_ignores_milisecond_timestamp_but_luhn_isvalid():
     body = f"Timestamp: {seconds + ms}"
     findings = scan_all(body)
     assert not any(f.rule_id == "luhn_cc" for f in findings)
+
+
+# ===== REGEX TESTS =====
+def test_regex_rules_dummy_api_key_is_detected(): # remove later
+    findings = scan_all("the key is api-key")
+    assert any(f.rule_id == "AWS_VERY_REAL_API_KEY" for f in findings)
+
+# === END REGEX TESTS ===
