@@ -41,6 +41,15 @@ def test_scan_finds_cc_with_dashes():
     findings = scan_all(body)
     assert any(f.rule_id == "luhn_cc" for f in findings)
 
+def test_scan_finds_cc_with_dots():
+    body = 'POST /pay {"card":"4111.1111.1111.1111"}'
+    findings = scan_all(body)
+    assert any(f.rule_id == "luhn_cc" for f in findings)
+
+def test_scan_finds_cc_with_underscores():
+    body = 'POST /pay {"card":"4111_1111_1111_1111"}'
+    findings = scan_all(body)
+    assert any(f.rule_id == "luhn_cc" for f in findings)
 
 def test_scan_finds_cc_with_spaces():
     body = "Please charge card 4111 1111 1111 1111 today."

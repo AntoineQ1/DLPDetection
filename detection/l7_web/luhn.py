@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 from . import Finding
 
-_CANDIDATE = re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
+_CANDIDATE = re.compile(r"(?<!\d)(?:\d[ ._-]?){11,18}\d(?!\d)")
 
 
 class Issuer(NamedTuple):
@@ -112,7 +112,7 @@ def scan(text: str) -> list[Finding]:
     hits: list[Finding] = []
     for m in _CANDIDATE.finditer(text):
         raw = m.group(0)
-        digits = re.sub(r"[ -]", "", raw)
+        digits = re.sub(r"[ ._-]", "", raw)
         issuer = credit_card_detector(digits)
         if issuer is not None:
             hits.append(
