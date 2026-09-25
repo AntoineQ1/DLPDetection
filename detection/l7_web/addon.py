@@ -2,6 +2,7 @@ from mitmproxy import http
 
 from detection.common.logger import log_alert
 
+from detection.l7_web import scan_all
 
 class WebDlpAddon:
     def request(self, flow: http.HTTPFlow) -> None:
@@ -9,15 +10,19 @@ class WebDlpAddon:
         target_host = flow.request.pretty_host
         body = flow.request.get_text() or ""
 
-        # Dummy rule: flag and block if payload contains "SECRET"
-        if "SECRET" in body or any("SECRET" in v for v in flow.request.headers.values()):
+        findings = scan_all(body)
+        if findings:
             log_alert(
                 channel="L7_WEB",
-                rule_id="SECRET_KEYWORD_DETECTED",
-                severity="HIGH",
+                rule_id=findings[0].rule_id,
+                severity=findings[0].severity.upper(),
                 source_ip=client_ip,
                 destination=target_host,
-                details={"matched": "SECRET"},
+                details={
+                    "findings": [
+                        {"rule_id": f.rule_id, "matched": f.matched} for f in findings
+                    ]
+                },
                 blocked=True,
             )
             flow.response = http.Response.make(
