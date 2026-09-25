@@ -6,6 +6,11 @@ Direct calls into `detection.l7_web` — no mitmproxy needed.
 from detection.l7_web import scan_all
 from detection.l7_web.luhn import luhn_valid
 
+def test_luhn_empty():
+    assert luhn_valid("") is False
+
+def test_luhn_receives_char():
+    assert luhn_valid("411111111111111a") is False
 
 def test_luhn_valid_visa_test_pan():
     assert luhn_valid("4111111111111111") is True
@@ -101,5 +106,19 @@ def test_scan_ignores_valid_luhn_but_too_short():
 
 def test_scan_ignores_digit_run_too_long_to_be_a_card():
     body = "opaque id 41111111111111111111 end"
+    findings = scan_all(body)
+    assert not any(f.rule_id == "luhn_cc" for f in findings)
+
+def test_scan_ignores_all_zeros_but_luhn_isvalid():
+    assert luhn_valid("0000000000000000") is True
+    body = "Your id is 0000000000000000."
+    findings = scan_all(body)
+    assert not any(f.rule_id == "luhn_cc" for f in findings)
+
+def test_scan_ignores_milisecond_timestamp_but_luhn_isvalid():
+    seconds = "1700000000" # for example: seconds since 1970
+    ms = "004"
+    assert luhn_valid(seconds + ms) is True
+    body = f"Timestamp: {seconds + ms}"
     findings = scan_all(body)
     assert not any(f.rule_id == "luhn_cc" for f in findings)
