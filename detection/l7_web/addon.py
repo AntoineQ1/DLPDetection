@@ -3,14 +3,19 @@ from mitmproxy import http
 from detection.common.logger import log_alert
 
 from detection.l7_web import scan_all
+from detection.l7_web.decoder import decode_body
 
 class WebDlpAddon:
     def request(self, flow: http.HTTPFlow) -> None:
         client_ip = flow.client_conn.address[0] if flow.client_conn.address else "unknown"
         target_host = flow.request.pretty_host
-        body = flow.request.get_text() or ""
 
-        findings = scan_all(body)
+        content = flow.request.content or b""
+        content_type = flow.request.headers.get("content-type", "")
+
+        findings = []
+        for value in decode_body(content, content_type):
+            findings.extend(scan_all(value))
         if findings:
             log_alert(
                 channel="L7_WEB",
