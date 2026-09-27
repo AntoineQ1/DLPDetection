@@ -1,5 +1,4 @@
-"""Shannon-entropy based detection of high-entropy tokens (Workstream B).
-"""
+"""Shannon-entropy based detection of high-entropy tokens (Workstream B)."""
 
 from __future__ import annotations
 

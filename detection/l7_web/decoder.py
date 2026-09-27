@@ -1,7 +1,7 @@
 """HTTP body decoder (Workstream B).
 
 Extract scannable text values from an HTTP request body, given its raw
-bytes and Content-Type. 
+bytes and Content-Type.
 
 Supported content types:
     - application/x-www-form-urlencoded  (HTML form POSTs)
@@ -23,8 +23,7 @@ def _normalize_content_type(content_type: str) -> str:
 
 
 def _flatten_strings(obj) -> list[str]:
-    """Recursively collect every string value inside a JSON-shaped object.
-    """
+    """Recursively collect every string value inside a JSON-shaped object."""
     if isinstance(obj, str):
         return [obj]
     if isinstance(obj, dict):
@@ -41,7 +40,7 @@ def _flatten_strings(obj) -> list[str]:
 
 
 def decode_body(content: bytes, content_type: str) -> list[str]:
-    
+
     if not content:
         return []
 
@@ -64,6 +63,6 @@ def decode_body(content: bytes, content_type: str) -> list[str]:
             content_str = content.decode("utf-8", errors="replace")
             return _flatten_strings(json.loads(content_str))
         except Exception:
-            pass 
+            pass
 
     return [content.decode("utf-8", errors="replace")]

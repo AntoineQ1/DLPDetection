@@ -17,6 +17,7 @@ def analyze_packet(pkt) -> None:
     elif pkt.haslayer(DNS) and pkt[DNS].qr == 0:
         pass
 
+
 if __name__ == "__main__":
     print("[DLP-COVERT] Passive sniffer listening on gateway interfaces...")
     sys.stdout.flush()

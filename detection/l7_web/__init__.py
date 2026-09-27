@@ -39,9 +39,8 @@ class Finding:
 
 
 def scan_all(text: str, source: str = "body") -> list[Finding]:
-    """Run every L7 detector against `text` and return the union of findings.
-    """
-    from . import regex_rules, luhn, entropy
+    """Run every L7 detector against `text` and return the union of findings."""
+    from . import entropy, luhn, regex_rules
 
     hits: list[Finding] = []
     for module in (regex_rules, luhn, entropy):

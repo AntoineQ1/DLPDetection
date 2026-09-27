@@ -1,13 +1,15 @@
 from mitmproxy import http
 
 from detection.common.logger import log_alert
-
 from detection.l7_web import scan_all
 from detection.l7_web.decoder import decode_body
 
+
 class WebDlpAddon:
     def request(self, flow: http.HTTPFlow) -> None:
-        client_ip = flow.client_conn.address[0] if flow.client_conn.address else "unknown"
+        client_ip = (
+            flow.client_conn.address[0] if flow.client_conn.address else "unknown"
+        )
         target_host = flow.request.pretty_host
 
         content = flow.request.content or b""
@@ -35,5 +37,6 @@ class WebDlpAddon:
                 b"HTTP 403 Forbidden: Blocked by DLP Gateway.\n",
                 {"Content-Type": "text/plain"},
             )
+
 
 addons = [WebDlpAddon()]
