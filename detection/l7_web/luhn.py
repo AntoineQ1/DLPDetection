@@ -201,7 +201,7 @@ def verify_prefix(digits: str, prefixes: list) -> bool:
     return False
 
 
-def credit_card_detector(digits: str) -> Issuer or None:
+def credit_card_detector(digits: str) -> Issuer | None:
     luhn_res = luhn_valid(digits)
     for issuer in ISSUERS:
         if not issuer.include_detection:  # For test and statistic purposes
