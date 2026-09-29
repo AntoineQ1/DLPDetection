@@ -1,14 +1,5 @@
 """L7 web-layer DLP inspection (Workstream B).
 
-Public contract used by the mitmproxy addon and the test suite:
-
-    from detection.l7_web import scan_all, Finding
-
-    findings = scan_all(text, source="body")
-    if findings:
-        # block the flow, log findings
-        ...
-
 Each detector module (`regex_rules`, `luhn`, `entropy`) exposes a
 `scan(text: str) -> list[Finding]` function. `scan_all` aggregates them.
 """
@@ -48,11 +39,8 @@ class Finding:
 
 
 def scan_all(text: str, source: str = "body") -> list[Finding]:
-    """Run every L7 detector against `text` and return the union of findings.
-
-    Kept dependency-free so tests can call it without spinning up mitmproxy.
-    """
-    from . import regex_rules, luhn, entropy
+    """Run every L7 detector against `text` and return the union of findings."""
+    from . import entropy, luhn, regex_rules
 
     hits: list[Finding] = []
     for module in (regex_rules, luhn, entropy):
@@ -61,7 +49,6 @@ def scan_all(text: str, source: str = "body") -> list[Finding]:
 
 
 def _tagged(findings: list[Finding], source: str) -> list[Finding]:
-    """Stamp the source onto findings that didn't set one explicitly."""
     out: list[Finding] = []
     for f in findings:
         if f.source == "body" and source != "body":

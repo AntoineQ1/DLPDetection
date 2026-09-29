@@ -12,6 +12,7 @@ class SinkHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"OK\n")
 
+
 if __name__ == "__main__":
     server = HTTPServer(("0.0.0.0", 80), SinkHandler)
     print("[ATTACKER-C2] HTTP sink listening on port 80...")
