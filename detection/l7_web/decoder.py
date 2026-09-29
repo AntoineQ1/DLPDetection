@@ -22,19 +22,19 @@ def _normalize_content_type(content_type: str) -> str:
     return content_type.split(";", 1)[0].strip().lower()
 
 
-def _flatten_strings(obj) -> list[str]:
-    """Recursively collect every string value inside a JSON-shaped object."""
-    if isinstance(obj, str):
-        return [obj]
+def _flatten_scalars(obj) -> list[str]:
+    """Recursively collect every string or numeric value inside a JSON-shaped object."""
+    if isinstance(obj, (str, int, float)):
+        return [str(obj)]
     if isinstance(obj, dict):
         result = []
         for value in obj.values():
-            result.extend(_flatten_strings(value))
+            result.extend(_flatten_scalars(value))
         return result
     if isinstance(obj, list):
         result = []
         for value in obj:
-            result.extend(_flatten_strings(value))
+            result.extend(_flatten_scalars(value))
         return result
     return []
 
@@ -52,7 +52,7 @@ def decode_body(content: bytes, content_type: str) -> list[str]:
             parsed = parse_qs(content_str, keep_blank_values=True)
             parsed_list = []
             for value in parsed.values():
-                parsed_list.extend(_flatten_strings(value))
+                parsed_list.extend(_flatten_scalars(value))
             return parsed_list
 
         except Exception:
@@ -61,7 +61,7 @@ def decode_body(content: bytes, content_type: str) -> list[str]:
     if ct == "application/json":
         try:
             content_str = content.decode("utf-8", errors="replace")
-            return _flatten_strings(json.loads(content_str))
+            return _flatten_scalars(json.loads(content_str))
         except Exception:
             pass
 
