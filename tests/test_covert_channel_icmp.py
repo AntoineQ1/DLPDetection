@@ -23,7 +23,11 @@ def _build_linux_payload() -> bytes:
 def test_parse_icmp_echo_valid():
     """Check that a valid ICMP Echo Request packet is parsed correctly."""
     raw_data = WINDOWS_PING_PAYLOAD
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST, id=0x1234, seq=1) / Raw(load=raw_data)
+    pkt = (
+        IP(src="172.20.0.3", dst="172.21.0.10")
+        / ICMP(type=ICMP_ECHO_REQUEST, id=0x1234, seq=1)
+        / Raw(load=raw_data)
+    )
 
     parsed = parse_icmp_echo(pkt)
 
@@ -39,7 +43,9 @@ def test_parse_icmp_echo_valid():
 
 def test_parse_icmp_ignores_echo_reply():
     """Ensures only Echo Request messages are parsed, not Echo Replies."""
-    pkt = IP(src="172.21.0.10", dst="172.20.0.3") / ICMP(type=ICMP_ECHO_REPLY, id=0x1234, seq=1)
+    pkt = IP(src="172.21.0.10", dst="172.20.0.3") / ICMP(
+        type=ICMP_ECHO_REPLY, id=0x1234, seq=1
+    )
 
     parsed = parse_icmp_echo(pkt)
     assert parsed is None
@@ -73,12 +79,20 @@ def test_benign_payload_validation():
 
 def test_structure_benign_traffic_yields_no_findings():
     """Verify that standard Linux and Windows pings raise zero findings."""
-    pkt_linux = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=_build_linux_payload())
+    pkt_linux = (
+        IP(src="172.20.0.3", dst="172.21.0.10")
+        / ICMP(type=ICMP_ECHO_REQUEST)
+        / Raw(load=_build_linux_payload())
+    )
     msg_linux = parse_icmp_echo(pkt_linux)
     assert msg_linux is not None
     assert check_structure(msg_linux) == []
 
-    pkt_win = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=WINDOWS_PING_PAYLOAD)
+    pkt_win = (
+        IP(src="172.20.0.3", dst="172.21.0.10")
+        / ICMP(type=ICMP_ECHO_REQUEST)
+        / Raw(load=WINDOWS_PING_PAYLOAD)
+    )
     msg_win = parse_icmp_echo(pkt_win)
     assert msg_win is not None
     assert check_structure(msg_win) == []
@@ -87,7 +101,11 @@ def test_structure_benign_traffic_yields_no_findings():
 def test_structure_oversized_payload():
     """Verify detection of bulk payload exfiltration (> 64 bytes)."""
     bulk_data = b"CONFIDENTIAL_DATA_LEAK_" * 4
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=bulk_data)
+    pkt = (
+        IP(src="172.20.0.3", dst="172.21.0.10")
+        / ICMP(type=ICMP_ECHO_REQUEST)
+        / Raw(load=bulk_data)
+    )
     msg = parse_icmp_echo(pkt)
 
     assert msg is not None
@@ -100,7 +118,11 @@ def test_structure_oversized_payload():
 def test_structure_non_standard_size():
     """Verify detection of non-standard payload lengths (e.g., 20 bytes)."""
     short_data = b"exfiltrated_password"
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=short_data)
+    pkt = (
+        IP(src="172.20.0.3", dst="172.21.0.10")
+        / ICMP(type=ICMP_ECHO_REQUEST)
+        / Raw(load=short_data)
+    )
     msg = parse_icmp_echo(pkt)
 
     assert msg is not None
@@ -113,7 +135,11 @@ def test_structure_non_standard_size():
 def test_structure_evasion_chunking_with_forged_pattern():
     """Verify detection when payload size matches 56 bytes but content is forged."""
     evasion_data = b"A" * 56
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=evasion_data)
+    pkt = (
+        IP(src="172.20.0.3", dst="172.21.0.10")
+        / ICMP(type=ICMP_ECHO_REQUEST)
+        / Raw(load=evasion_data)
+    )
     msg = parse_icmp_echo(pkt)
 
     assert msg is not None
