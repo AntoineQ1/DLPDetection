@@ -7,9 +7,8 @@ Each detector module (`regex_rules`, `luhn`, `entropy`) exposes a
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
 
-Severity = Literal["low", "medium", "high"]
+from detection.common.types import Severity
 
 
 @dataclass(frozen=True)

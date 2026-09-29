@@ -26,6 +26,7 @@ from collections import deque
 from dataclasses import dataclass, field
 
 from detection.common.logger import log_alert
+from detection.common.types import Severity
 
 # --- tunables -----------------------------------------------------------------
 # Number of trailing labels treated as the registered ("apex") domain. For the
@@ -132,7 +133,7 @@ class DnsTunnelDetector:
         if len(feats.subdomain) >= ENTROPY_MIN_CHARS and feats.entropy >= ENTROPY_THRESHOLD:
             alerts.append(
                 self._alert(
-                    "DNS_HIGH_ENTROPY", "HIGH", src_ip, feats, qtype,
+                    "DNS_HIGH_ENTROPY", Severity.HIGH, src_ip, feats, qtype,
                     {"entropy": round(feats.entropy, 3), "payload_len": len(feats.subdomain)},
                 )
             )
@@ -167,7 +168,7 @@ class DnsTunnelDetector:
             return None  # already alerted for this ongoing burst
         state.volume_alerted = True
         return self._alert(
-            "DNS_TUNNEL_VOLUME", "HIGH", src_ip, feats, qtype,
+            "DNS_TUNNEL_VOLUME", Severity.HIGH, src_ip, feats, qtype,
             {
                 "unique_subdomains": len(state.unique),
                 "window_sec": VOLUME_WINDOW_SEC,

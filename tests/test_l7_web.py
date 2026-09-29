@@ -3,6 +3,7 @@
 Direct calls into `detection.l7_web` — no mitmproxy needed.
 """
 
+from detection.common.types import Severity
 from detection.l7_web import scan_all
 from detection.l7_web.luhn import luhn_valid
 
@@ -99,7 +100,7 @@ def test_scan_finding_carries_correct_metadata():
     assert len(cc_hits) == 1
     f = cc_hits[0]
     assert f.detector == "luhn"
-    assert f.severity == "high"
+    assert f.severity == Severity.HIGH
     assert f.meta.get("digits") == 16
     assert body[f.start : f.end] == f.matched
 
@@ -168,7 +169,7 @@ def test_regex_rules_dummy_api_key_is_detected():  # remove later
 
 # ===== DECODER TESTS =====
 from detection.l7_web.decoder import (
-    _flatten_strings,
+    _flatten_scalars,
     _normalize_content_type,
     decode_body,
 )
@@ -197,20 +198,20 @@ def test_normalize_ct_empty():
     assert _normalize_content_type("") == ""
 
 
-# --- _flatten_strings ---
+# --- _flatten_scalars ---
 
 
-def test_flatten_strings_bare_string():
-    assert _flatten_strings("hello") == ["hello"]
+def test_flatten_scalars_bare_string():
+    assert _flatten_scalars("hello") == ["hello"]
 
 
-def test_flatten_strings_ignores_numeric_and_bool():
-    assert _flatten_strings({"n": 42, "b": True, "x": None, "s": "keep"}) == ["keep"]
+def test_flatten_scalars_ignores_numeric_and_bool():
+    assert _flatten_scalars({"n": 42, "b": True, "x": None, "s": "keep"}) == ["keep"]
 
 
-def test_flatten_strings_recurses_into_lists_and_dicts():
+def test_flatten_scalars_recurses_into_lists_and_dicts():
     obj = {"a": ["b", {"c": ["d", "e"]}], "f": "g"}
-    assert _flatten_strings(obj) == ["b", "d", "e", "g"]
+    assert _flatten_scalars(obj) == ["b", "d", "e", "g"]
 
 
 # --- decode_body: empty / fallback ---

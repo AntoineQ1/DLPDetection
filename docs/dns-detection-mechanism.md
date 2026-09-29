@@ -149,7 +149,7 @@ producing one JSON line prefixed with `[DLP-ALERT]`:
   "timestamp": 1790333178.47,
   "channel": "DNS_COVERT",
   "rule_id": "DNS_HIGH_ENTROPY",
-  "severity": "HIGH",
+  "severity": Severity.HIGH,
   "source_ip": "172.20.0.3",
   "destination": "attacker.example",
   "blocked": false,

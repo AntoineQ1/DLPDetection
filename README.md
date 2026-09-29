@@ -166,7 +166,7 @@ from detection.common.logger import log_alert
 log_alert(
     channel="L7_WEB",          # "L7_WEB" | "DNS_COVERT" | "ICMP_COVERT"
     rule_id="KEYWORD_DETECTED",
-    severity="HIGH",           # "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+    severity=Severity.MEDIUM
     source_ip="172.20.0.3",
     destination="example.com",
     details={"match": "SECRET"},

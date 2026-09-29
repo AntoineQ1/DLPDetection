@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
+from detection.common.types import Severity
+
 from . import Finding
 
 _CANDIDATE = re.compile(r"(?<!\d)(?:\d[ ._-]?){11,18}\d(?!\d)")
@@ -226,7 +228,7 @@ def scan(text: str) -> list[Finding]:
                 Finding(
                     rule_id="luhn_cc",
                     detector="luhn",
-                    severity="high",
+                    severity=Severity.HIGH,
                     matched=raw,
                     start=m.start(),
                     end=m.end(),

@@ -7,6 +7,7 @@ from typing import NamedTuple
 
 from . import Finding, Severity
 
+from detection.common.types import Severity
 
 class RegexRule(NamedTuple):
     rule_id: str
@@ -19,7 +20,7 @@ RULES: list[RegexRule] = [
     RegexRule(
         rule_id="AWS_VERY_REAL_API_KEY",
         pattern=re.compile("api-key"),
-        severity="high",
+        severity=Severity.HIGH,
     ),
 ]
 
