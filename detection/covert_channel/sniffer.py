@@ -3,13 +3,38 @@ import time
 
 from scapy.all import DNS, ICMP, IP, conf, get_if_addr, get_if_list, sniff
 
+from detection.common.logger import log_alert
 from detection.covert_channel.dns_analyzer import analyze_dns_packet
+from detection.covert_channel.icmp_detector import (
+    analyze_icmp_message,
+    parse_icmp_echo,
+)
 
 # Lab subnet that the victim lives on. Sniffing the interface that carries this
 # subnet lets us observe exfiltration at its source (and avoids double-counting
 # the same packet again after the gateway forwards it out the external side).
 INTERNAL_SUBNET_PREFIX = os.environ.get("INTERNAL_SUBNET_PREFIX", "172.20.0.")
 BPF_FILTER = "icmp or udp port 53"
+
+
+def _handle_icmp(pkt) -> None:
+    msg = parse_icmp_echo(pkt)
+    if msg is None:
+        return
+    for finding in analyze_icmp_message(msg):
+        log_alert(
+            channel="covert_icmp",
+            rule_id=finding.rule_id,
+            severity=(
+                finding.severity.value
+                if hasattr(finding.severity, "value")
+                else str(finding.severity)
+            ),
+            source_ip=msg.source_ip,
+            destination=msg.destination_ip,
+            details={"description": finding.description, **finding.details},
+            blocked=False,
+        )
 
 
 def analyze_packet(pkt) -> None:
@@ -22,7 +47,7 @@ def analyze_packet(pkt) -> None:
     print(f"[DEBUG-SNIFFER] Packet intercepted : {src_ip} -> {dst_ip}", flush=True)
 
     if pkt.haslayer(ICMP):
-        pass  # TODO: icmp_analyzer, blocked on attacks/icmp_exfiltrate.py
+        _handle_icmp(pkt)
     elif pkt.haslayer(DNS) and pkt[DNS].qr == 0:
         analyze_dns_packet(pkt)
 
@@ -77,10 +102,11 @@ def main() -> None:
                 store=False,
             )
         except OSError as exc:
-            print(f"[DLP-COVERT] capture socket error ({exc}); retrying in 2s", flush=True)
+            print(
+                f"[DLP-COVERT] capture socket error ({exc}); retrying in 2s", flush=True
+            )
             time.sleep(2)
             ifaces = pick_interfaces() or ifaces
-
 
 
 if __name__ == "__main__":
