@@ -12,12 +12,20 @@ class WebDlpAddon:
         )
         target_host = flow.request.pretty_host
 
+        findings = []
+
+        # Path & Query strings
+        findings.extend(scan_all(flow.request.path))
+        for key, value in flow.request.query.items():
+            findings.extend(scan_all(key))
+            findings.extend(scan_all(value))
+
+        # Body
         content = flow.request.content or b""
         content_type = flow.request.headers.get("content-type", "")
-
-        findings = []
         for value in decode_body(content, content_type):
             findings.extend(scan_all(value))
+
         if findings:
             log_alert(
                 channel="L7_WEB",
