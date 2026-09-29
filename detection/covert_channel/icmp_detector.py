@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+from detection.common.types import Severity
 
 from scapy.layers.inet import ICMP, IP
+
+from detection.l7_web import scan_all
 
 if TYPE_CHECKING:
     from scapy.packet import Packet
@@ -40,7 +43,7 @@ class ICMPFinding:
     """Represents a finding from an ICMP anomaly detected in a packet."""
 
     rule_id: str
-    severity: str  # "LOW", "MEDIUM", "HIGH", "CRITICAL"
+    severity: Severity
     description: str
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -94,7 +97,7 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
         findings.append(
             ICMPFinding(
                 rule_id="icmp_oversized_payload",
-                severity="HIGH",
+                severity=Severity.HIGH,
                 description=f"Payload size ({msg.payload_size} bytes) exceeds standard threshold ({MAX_STANDARD_PAYLOAD_SIZE} bytes)",
                 details={"payload_size": msg.payload_size, "threshold": MAX_STANDARD_PAYLOAD_SIZE},
             )
@@ -106,7 +109,7 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
         findings.append(
             ICMPFinding(
                 rule_id="icmp_non_standard_size",
-                severity="MEDIUM",
+                severity=Severity.MEDIUM,
                 description=f"Payload size ({msg.payload_size} bytes) deviates from standard OS ping sizes (32, 56)",
                 details={"payload_size": msg.payload_size, "expected_sizes": sorted(STANDARD_PAYLOAD_SIZES)},
             )
@@ -117,10 +120,49 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
     findings.append(
         ICMPFinding(
             rule_id="icmp_abnormal_pattern",
-            severity="MEDIUM",
+            severity=Severity.MEDIUM,
             description=f"Payload size is {msg.payload_size} bytes but content does not match standard OS ping signature",
             details={"payload_size": msg.payload_size},
         )
     )
 
+    return findings
+
+def check_content(msg: ICMPEchoMessage) -> list[ICMPFinding]:
+    """Scan the ICMP payload for sensitive data using the shared L7 inspection engine."""
+    if not msg.payload:
+        return []
+
+    decoded_text = msg.payload.decode("utf-8", errors="ignore")
+    if not decoded_text.strip():
+        return []
+
+    findings: list[ICMPFinding] = []
+    l7_findings = scan_all(decoded_text, source="icmp_payload")
+
+    for hit in l7_findings:
+
+        findings.append(
+            ICMPFinding(
+                rule_id=f"icmp_sensitive_data_{hit.rule_id}",
+                severity=hit.severity,
+                description=f"Sensitive content detected in ICMP payload via L7 rule '{hit.rule_id}'",
+                details={
+                    "matched": hit.matched,
+                    "detector": hit.detector,
+                    "source": hit.source,
+                    "l7_rule_id": hit.rule_id,
+                    **hit.meta,
+                },
+            )
+        )
+
+    return findings
+
+
+def analyze_icmp_message(msg: ICMPEchoMessage) -> list[ICMPFinding]:
+    """Execute all static heuristics (structural and content inspection) on an ICMP message."""
+    findings: list[ICMPFinding] = []
+    findings.extend(check_structure(msg))
+    findings.extend(check_content(msg))
     return findings

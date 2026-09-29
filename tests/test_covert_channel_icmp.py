@@ -1,13 +1,19 @@
 """Unit tests for the ICMP covert channel detection engine."""
 
+from typing import Any
+from unittest.mock import MagicMock
+
 from scapy.layers.inet import ICMP, IP, TCP
 from scapy.packet import Raw
 
+from detection.common.types import Severity
 from detection.covert_channel.icmp_detector import (
     ICMP_ECHO_REPLY,
     ICMP_ECHO_REQUEST,
     LINUX_PING_PATTERN,
     WINDOWS_PING_PAYLOAD,
+    analyze_icmp_message,
+    check_content,
     check_structure,
     is_known_benign_payload,
     parse_icmp_echo,
@@ -112,7 +118,7 @@ def test_structure_oversized_payload():
     findings = check_structure(msg)
     assert len(findings) == 1
     assert findings[0].rule_id == "icmp_oversized_payload"
-    assert findings[0].severity == "HIGH"
+    assert findings[0].severity == Severity.HIGH
 
 
 def test_structure_non_standard_size():
@@ -129,7 +135,7 @@ def test_structure_non_standard_size():
     findings = check_structure(msg)
     assert len(findings) == 1
     assert findings[0].rule_id == "icmp_non_standard_size"
-    assert findings[0].severity == "MEDIUM"
+    assert findings[0].severity == Severity.MEDIUM
 
 
 def test_structure_evasion_chunking_with_forged_pattern():
@@ -146,4 +152,70 @@ def test_structure_evasion_chunking_with_forged_pattern():
     findings = check_structure(msg)
     assert len(findings) == 1
     assert findings[0].rule_id == "icmp_abnormal_pattern"
-    assert findings[0].severity == "MEDIUM"
+    assert findings[0].severity == Severity.MEDIUM
+
+def test_check_content_empty_or_whitespace_payload():
+    """Verify that an empty or whitespace-only payload produces no findings."""
+    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=b"   \t\n  ")
+    msg = parse_icmp_echo(pkt)
+    assert msg is not None
+    assert check_content(msg) == []
+
+
+def test_check_content_detects_sensitive_data(monkeypatch: Any):
+    """Verify that sensitive substrings in ICMP payload trigger L7 scan_all detection."""
+    mock_hit = MagicMock()
+    mock_hit.rule_id = "fake_api_token"
+    mock_hit.detector = "regex"
+    mock_hit.severity = "CRITICAL"
+    mock_hit.matched = "ghp_1234567890abcdef"
+    mock_hit.source = "icmp_payload"
+    mock_hit.meta = {"entropy": 4.2}
+
+    # Intercept scan_all to test icmp_detector in strict isolation
+    monkeypatch.setattr(
+        "detection.covert_channel.icmp_detector.scan_all",
+        lambda text, source: [mock_hit] if "ghp_" in text else [],
+    )
+
+    # Payload with binary noise prepended before the token
+    noisy_payload = b"\x00\xff\xfe" + b"ghp_1234567890abcdef" + b"\x00"
+    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=noisy_payload)
+    msg = parse_icmp_echo(pkt)
+    assert msg is not None
+
+    findings = check_content(msg)
+    assert len(findings) == 1
+    assert findings[0].rule_id == "icmp_sensitive_data_fake_api_token"
+    assert findings[0].severity == "CRITICAL"
+    assert findings[0].details["matched"] == "ghp_1234567890abcdef"
+    assert findings[0].details["detector"] == "regex"
+
+
+def test_analyze_icmp_message_aggregates_structure_and_content(monkeypatch: Any):
+    """Verify that analyze_icmp_message combines both structural and content findings."""
+    mock_hit = MagicMock()
+    mock_hit.rule_id = "credit_card"
+    mock_hit.detector = "luhn"
+    mock_hit.severity = Severity.HIGH
+    mock_hit.matched = "4532015112830366"
+    mock_hit.source = "icmp_payload"
+    mock_hit.meta = {}
+
+    monkeypatch.setattr(
+        "detection.covert_channel.icmp_detector.scan_all",
+        lambda text, source: [mock_hit],
+    )
+
+    # Oversized payload (80 bytes) containing a sensitive number
+    leak_data = b"4532015112830366" + b"A" * 64
+    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=leak_data)
+    msg = parse_icmp_echo(pkt)
+    assert msg is not None
+
+    all_findings = analyze_icmp_message(msg)
+    rule_ids = [f.rule_id for f in all_findings]
+
+    # Must contain both the structural finding and the content finding
+    assert "icmp_oversized_payload" in rule_ids
+    assert "icmp_sensitive_data_credit_card" in rule_ids
