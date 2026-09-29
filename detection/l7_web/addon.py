@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from mitmproxy import http
 
 from detection.common.logger import log_alert
@@ -6,25 +8,28 @@ from detection.l7_web.decoder import decode_body
 
 
 class WebDlpAddon:
+    def __init__(self, scanner: Callable[[str], list] = scan_all):
+        self.scanner = scanner
+
     def request(self, flow: http.HTTPFlow) -> None:
         client_ip = (
             flow.client_conn.address[0] if flow.client_conn.address else "unknown"
         )
         target_host = flow.request.pretty_host
+        content_type = flow.request.headers.get("content-type", "")
 
         findings = []
 
-        # Path & Query strings
-        findings.extend(scan_all(flow.request.path))
+        # 1. Inspection URL et Query string
+        findings.extend(self.scanner(flow.request.path))
         for key, value in flow.request.query.items():
-            findings.extend(scan_all(key))
-            findings.extend(scan_all(value))
+            findings.extend(self.scanner(key))
+            findings.extend(self.scanner(value))
 
-        # Body
+        # 2. Inspection Body
         content = flow.request.content or b""
-        content_type = flow.request.headers.get("content-type", "")
         for value in decode_body(content, content_type):
-            findings.extend(scan_all(value))
+            findings.extend(self.scanner(value))
 
         if findings:
             log_alert(
