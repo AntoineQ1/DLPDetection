@@ -1,7 +1,9 @@
 import argparse
+
 import requests
 
 DEFAULT_URL = "https://httpbin.org/post"
+
 
 def send_payload(url: str, secret: str) -> None:
     print(f"[*] Posting to {url}...")
@@ -16,10 +18,13 @@ def send_payload(url: str, secret: str) -> None:
     except Exception as err:
         print(f"[-] Request failed: {err}")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default=DEFAULT_URL, help="Target URL")
-    parser.add_argument("--secret", default="Sample data containing a SECRET token", help="Payload")
+    parser.add_argument(
+        "--secret", default="Sample data containing a SECRET token", help="Payload"
+    )
     args = parser.parse_args()
 
     send_payload(args.url, args.secret)
