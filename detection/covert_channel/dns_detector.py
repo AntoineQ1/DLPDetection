@@ -1,32 +1,42 @@
-"""DNS covert-channel analyzer (Workstream C).
+"""DNS covert-channel detection engine - Parsing & heuristics (Workstream C).
 
-Consumes DNS *queries* (qr == 0) observed on the internal interface by
-``sniffer.py`` and raises DLP alerts for tunnelling behaviour produced by
-``attacks/dns_exfiltrate.py``.
+Holds everything that only makes sense for DNS: query parsing, thresholds,
+qname feature extraction (apex / subdomain split) and the tunnelling rules. Generic
+primitives are reused from ``detection.l7_web`` (``shannon_entropy`` and the
+``scan_all`` content engine); only how DNS applies them (thresholds, what text
+is scored) lives here.
 
-Design: packet parsing (scapy) is kept in :func:`analyze_dns_packet`, while all
-detection logic operates on plain strings/ints in :class:`DnsTunnelDetector`, so
-the heuristics are unit-testable without live capture.
+``parse_dns_query`` turns a scapy packet into a plain ``DnsQuery``; all
+detection logic then operates on plain strings/ints, so it is unit-testable
+without live capture. Alert logging is done by ``sniffer.py``.
 
-Three complementary rules cover the attack's stealth ladder (D1..D5):
+Complementary rules cover the attack's stealth ladder (D1..D5):
 
-  DNS_LONG_QNAME        long overall qname / long single label  -> catches D1 naive
-  DNS_HIGH_ENTROPY      encoded (random-looking) labels          -> catches D2 hex/base32/base64
-  DNS_TUNNEL_VOLUME     many unique subdomains under one apex     -> catches D3 burst / D5 slow
+  DNS_LONG_QNAME          long overall qname / long single label  -> catches D1 naive
+  DNS_SENSITIVE_DATA_*    L7 content rules (regex/Luhn) on labels -> catches D1 naive content
+  DNS_HIGH_ENTROPY        encoded (random-looking) labels          -> catches D2 hex/base32/base64
+  DNS_TUNNEL_VOLUME       many unique subdomains under one apex     -> catches D3 burst / D5 slow
 
 Thresholds are environment-overridable so the lab can be tuned without edits.
 """
 
 from __future__ import annotations
 
-import math
 import os
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from detection.common.logger import log_alert
+from scapy.layers.dns import DNS
+from scapy.layers.inet import IP
+
 from detection.common.types import Severity
+from detection.l7_web import scan_all
+from detection.l7_web.entropy import shannon_entropy
+
+if TYPE_CHECKING:
+    from scapy.packet import Packet
 
 # --- tunables -----------------------------------------------------------------
 # Number of trailing labels treated as the registered ("apex") domain. For the
@@ -51,15 +61,40 @@ VOLUME_THRESHOLD = int(os.environ.get("DNS_VOLUME_THRESHOLD", "8"))
 VOLUME_WINDOW_SEC = float(os.environ.get("DNS_VOLUME_WINDOW_SEC", "60"))
 
 
-def shannon_entropy(text: str) -> float:
-    """Per-character Shannon entropy in bits."""
-    if not text:
-        return 0.0
-    counts: dict[str, int] = {}
-    for ch in text:
-        counts[ch] = counts.get(ch, 0) + 1
-    n = len(text)
-    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+QTYPE_NAMES = {1: "A", 16: "TXT", 28: "AAAA"}
+
+
+@dataclass(frozen=True)
+class DnsQuery:
+    """Represents a parsed DNS query with the fields the detector needs."""
+
+    source_ip: str
+    destination_ip: str
+    qname: str
+    qtype: str
+
+
+def parse_dns_query(pkt: Packet) -> DnsQuery | None:
+    """Parse a DNS query packet. Responses (qr == 1) are ignored."""
+    if not (pkt.haslayer(IP) and pkt.haslayer(DNS)):
+        return None
+    dns = pkt[DNS]
+    # qdcount can be None on freshly-built packets; qd presence is the reliable check.
+    # qd is a list of questions in scapy >= 2.6; we inspect the first one.
+    if dns.qr != 0 or not dns.qd:
+        return None
+
+    question = dns.qd[0]
+    qname_raw = question.qname
+    qname = qname_raw.decode("latin-1") if isinstance(qname_raw, bytes) else str(qname_raw)
+    qtype = QTYPE_NAMES.get(int(getattr(question, "qtype", 1)), "OTHER")
+
+    return DnsQuery(
+        source_ip=pkt[IP].src,
+        destination_ip=pkt[IP].dst,
+        qname=qname,
+        qtype=qtype,
+    )
 
 
 @dataclass
@@ -67,6 +102,7 @@ class QnameFeatures:
     qname: str
     apex: str
     subdomain: str          # everything to the left of the apex, dots removed
+    sub_labels: list[str]   # the individual labels left of the apex
     longest_label: int
     total_len: int
     entropy: float
@@ -84,6 +120,7 @@ def extract_features(qname: str) -> QnameFeatures:
         qname=qname,
         apex=apex,
         subdomain=subdomain,
+        sub_labels=sub_labels,
         longest_label=longest,
         total_len=len(qname),
         entropy=shannon_entropy(subdomain),
@@ -124,12 +161,15 @@ class DnsTunnelDetector:
         if feats.longest_label >= LABEL_LEN_THRESHOLD or feats.total_len >= QNAME_LEN_THRESHOLD:
             alerts.append(
                 self._alert(
-                    "DNS_LONG_QNAME", "MEDIUM", src_ip, feats, qtype,
+                    "DNS_LONG_QNAME", Severity.MEDIUM, src_ip, feats, qtype,
                     {"longest_label": feats.longest_label, "qname_len": feats.total_len},
                 )
             )
 
-        # Rule 2: high-entropy payload (encoded exfil).
+        # Rule 2: shared L7 content rules (regex/Luhn) on the payload labels.
+        alerts.extend(self._check_content(src_ip, feats, qtype))
+
+        # Rule 3: high-entropy payload (encoded exfil).
         if len(feats.subdomain) >= ENTROPY_MIN_CHARS and feats.entropy >= ENTROPY_THRESHOLD:
             alerts.append(
                 self._alert(
@@ -138,11 +178,34 @@ class DnsTunnelDetector:
                 )
             )
 
-        # Rule 3: volume of unique subdomains under one apex (burst / low-and-slow).
+        # Rule 4: volume of unique subdomains under one apex (burst / low-and-slow).
         vol_alert = self._update_volume(src_ip, feats, qtype, now)
         if vol_alert is not None:
             alerts.append(vol_alert)
 
+        return alerts
+
+    def _check_content(
+        self, src_ip: str, feats: QnameFeatures, qtype: str
+    ) -> list[dict]:
+        # Scan each label on its own: joining labels would glue the chunk index
+        # (c0, c1, ...) onto the payload and break digit runs such as card numbers.
+        alerts: list[dict] = []
+        for label in feats.sub_labels:
+            for hit in scan_all(label, source="dns_qname"):
+                alerts.append(
+                    self._alert(
+                        f"DNS_SENSITIVE_DATA_{hit.rule_id.upper()}", hit.severity,
+                        src_ip, feats, qtype,
+                        {
+                            "matched": hit.matched,
+                            "detector": hit.detector,
+                            "source": hit.source,
+                            "l7_rule_id": hit.rule_id,
+                            **hit.meta,
+                        },
+                    )
+                )
         return alerts
 
     def _update_volume(
@@ -178,7 +241,7 @@ class DnsTunnelDetector:
     @staticmethod
     def _alert(
         rule_id: str,
-        severity: str,
+        severity: Severity,
         src_ip: str,
         feats: QnameFeatures,
         qtype: str,
@@ -191,37 +254,3 @@ class DnsTunnelDetector:
             "destination": feats.apex,
             "details": {"qname": feats.qname, "qtype": qtype, **details},
         }
-
-
-# Module-level singleton used by the sniffer dispatch.
-_DETECTOR = DnsTunnelDetector()
-
-
-def analyze_dns_packet(pkt) -> None:
-    """scapy entry point: extract the query and feed the detector.
-
-    Only inspects queries (qr == 0); responses from the sink are ignored.
-    """
-    from scapy.all import DNS, IP  # local import keeps this module test-friendly
-
-    if not pkt.haslayer(DNS) or not pkt.haslayer(IP):
-        return
-    dns = pkt[DNS]
-    # qdcount can be None on freshly-built packets; qd presence is the reliable check.
-    if dns.qr != 0 or dns.qd is None:
-        return
-
-    qname_raw = dns.qd.qname
-    qname = qname_raw.decode("latin-1") if isinstance(qname_raw, bytes) else str(qname_raw)
-    qtype = {1: "A", 16: "TXT", 28: "AAAA"}.get(int(getattr(dns.qd, "qtype", 1)), "OTHER")
-
-    for alert in _DETECTOR.inspect(pkt[IP].src, pkt[IP].dst, qname, qtype):
-        log_alert(
-            channel="DNS_COVERT",
-            rule_id=alert["rule_id"],
-            severity=alert["severity"],
-            source_ip=alert["source_ip"],
-            destination=alert["destination"],
-            details=alert["details"],
-            blocked=False,  # passive sniffer: detect-only, gateway does blocking
-        )

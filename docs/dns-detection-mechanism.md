@@ -1,8 +1,14 @@
 # DNS Covert-Channel Detection Mechanism
 
 How the passive covert-channel sniffer detects DNS tunnelling. This documents the
-design and rationale of `detection/covert_channel/dns_analyzer.py` and the
-`sniffer.py` capture layer that feeds it.
+design and rationale of `detection/covert_channel/dns_detector.py` (query
+parsing plus DNS-only thresholds, features and rules) and the `sniffer.py`
+capture layer that feeds it and logs the alerts. This mirrors the ICMP layout
+(`icmp_detector.py` + `sniffer.py::_handle_icmp`).
+
+Generic primitives are reused from `detection/l7_web` rather than duplicated:
+`shannon_entropy` lives in `detection/l7_web/entropy.py`. Only the math is
+shared; thresholds and what text gets scored stay in `dns_detector.py`.
 
 ---
 
@@ -65,14 +71,16 @@ Supporting robustness in `sniffer.py`:
 - **BPF filter** — `"icmp or udp port 53"` limits capture to the channels we care
   about; `store=False` keeps memory flat over long runs.
 
-The sniffer is a thin dispatcher: DNS queries (`qr == 0`) go to `analyze_dns_packet`;
-ICMP is a TODO pending the ICMP attack generator.
+The sniffer is a thin dispatcher: DNS packets go to `_handle_dns`, which parses the
+query with `dns_detector.parse_dns_query` (responses, `qr == 1`, are ignored), feeds
+the process-wide `DnsTunnelDetector` and logs each alert. ICMP packets go to
+`_handle_icmp` the same way.
 
 ---
 
 ## 3. Feature extraction
 
-For each query name we compute string-level features (`extract_features`), with no
+For each query name we compute string-level features (`dns_detector.extract_features`), with no
 dependency on scapy so the logic is unit-testable:
 
 - **apex** — the trailing `DNS_APEX_LABELS` labels (default 2), an approximation of
@@ -82,7 +90,8 @@ dependency on scapy so the logic is unit-testable:
   (`c0MZXW6exfil`). This is the attacker-controlled carrier.
 - **longest_label** — length of the longest single label (RFC max is 63).
 - **total_len** — length of the whole qname.
-- **entropy** — per-character Shannon entropy (bits/char) over the payload.
+- **entropy** — per-character Shannon entropy (bits/char) over the payload, computed
+  with the shared `detection.l7_web.entropy.shannon_entropy`.
 
 **Shannon entropy** measures how unpredictable the characters are:
 
@@ -99,7 +108,7 @@ caveat we rely on: **repetitive** secrets (e.g. `4111111111111111`) encode to
 
 ## 4. Detection rules
 
-Three complementary rules, because no single signal covers the whole stealth ladder.
+Four complementary rules, because no single signal covers the whole stealth ladder.
 
 ### DNS_LONG_QNAME — severity MEDIUM
 Fires when `longest_label ≥ DNS_LABEL_LEN_THRESHOLD` (default 20) **or**
@@ -107,6 +116,19 @@ Fires when `longest_label ≥ DNS_LABEL_LEN_THRESHOLD` (default 20) **or**
 
 Content-agnostic: catches **naive plaintext** (D1), which is low-entropy but produces
 labels far longer than real hostnames.
+
+### DNS_SENSITIVE_DATA_* — severity from the L7 rule
+Runs the shared L7 content engine (`detection.l7_web.scan_all`: regex rules and
+Luhn-validated card numbers) on each subdomain label, with `source="dns_qname"`.
+One alert per L7 hit, named `DNS_SENSITIVE_DATA_<L7 RULE ID>` (e.g.
+`DNS_SENSITIVE_DATA_LUHN_CC`); the severity is the L7 finding's own `Severity`, and
+`details` carries `l7_rule_id`, `detector`, `matched` and the detector's metadata.
+
+Catches **naive plaintext** content (D1) with the exact same rules as the web
+gateway, no DNS-specific duplicates. Labels are scanned one by one (not joined)
+so the chunk-index label (`c0`, `c1`, …) is not glued onto a digit run. Apex
+labels are not scanned. Encoded modes (D2) hide the content from these rules and
+are left to the entropy rule.
 
 ### DNS_HIGH_ENTROPY — severity HIGH
 Fires when the payload is at least `DNS_ENTROPY_MIN_CHARS` (default 16) long **and**
@@ -149,7 +171,7 @@ producing one JSON line prefixed with `[DLP-ALERT]`:
   "timestamp": 1790333178.47,
   "channel": "DNS_COVERT",
   "rule_id": "DNS_HIGH_ENTROPY",
-  "severity": Severity.HIGH,
+  "severity": "high",
   "source_ip": "172.20.0.3",
   "destination": "attacker.example",
   "blocked": false,
@@ -186,11 +208,11 @@ environment:
 ## 7. Testing
 
 The string-level heuristics are covered offline (no Docker/scapy) in
-`tests/test_covert_channel.py` — entropy behaviour, apex/payload splitting, each rule,
+`tests/test_covert_channel_dns.py` — entropy behaviour, apex/payload splitting, each rule,
 and the volume window:
 
 ```bash
-uv run pytest tests/test_covert_channel.py -v
+uv run pytest tests/test_covert_channel_dns.py -v
 ```
 
 ---
@@ -201,6 +223,5 @@ uv run pytest tests/test_covert_channel.py -v
   `foo.co.uk` would be mis-grouped. Acceptable in the closed lab.
 - **DNS-over-HTTPS/TLS** — encrypted DNS would bypass the plaintext UDP/53 sniffer;
   out of scope for this channel (would surface at the L7 layer instead).
-- **ICMP channel** — `icmp_analyzer.py` is pending `attacks/icmp_exfiltrate.py`.
 - **Enforcement** — a natural follow-up is blocking flagged apexes inline rather than
   alerting only.

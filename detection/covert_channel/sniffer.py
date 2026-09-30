@@ -4,7 +4,7 @@ import time
 from scapy.all import DNS, ICMP, IP, conf, get_if_addr, get_if_list, sniff
 
 from detection.common.logger import log_alert
-from detection.covert_channel.dns_analyzer import analyze_dns_packet
+from detection.covert_channel.dns_detector import DnsTunnelDetector, parse_dns_query
 from detection.covert_channel.icmp_detector import (
     analyze_icmp_message,
     parse_icmp_echo,
@@ -15,6 +15,10 @@ from detection.covert_channel.icmp_detector import (
 # the same packet again after the gateway forwards it out the external side).
 INTERNAL_SUBNET_PREFIX = os.environ.get("INTERNAL_SUBNET_PREFIX", "172.20.0.")
 BPF_FILTER = "icmp or udp port 53"
+
+# One stateful DNS detector per sniffer process (the volume rule tracks
+# per-source state across packets).
+_DNS_DETECTOR = DnsTunnelDetector()
 
 
 def _handle_icmp(pkt) -> None:
@@ -37,6 +41,24 @@ def _handle_icmp(pkt) -> None:
         )
 
 
+def _handle_dns(pkt) -> None:
+    query = parse_dns_query(pkt)
+    if query is None:
+        return
+    for alert in _DNS_DETECTOR.inspect(
+        query.source_ip, query.destination_ip, query.qname, query.qtype
+    ):
+        log_alert(
+            channel="DNS_COVERT",
+            rule_id=alert["rule_id"],
+            severity=alert["severity"],
+            source_ip=alert["source_ip"],
+            destination=alert["destination"],
+            details=alert["details"],
+            blocked=False,  # passive sniffer: detect-only, gateway does blocking
+        )
+
+
 def analyze_packet(pkt) -> None:
     if not pkt.haslayer(IP):
         return
@@ -48,8 +70,8 @@ def analyze_packet(pkt) -> None:
 
     if pkt.haslayer(ICMP):
         _handle_icmp(pkt)
-    elif pkt.haslayer(DNS) and pkt[DNS].qr == 0:
-        analyze_dns_packet(pkt)
+    elif pkt.haslayer(DNS):
+        _handle_dns(pkt)
 
 
 def pick_interfaces() -> list[str]:
