@@ -51,7 +51,11 @@ def _handle_dns(pkt) -> None:
         log_alert(
             channel="DNS_COVERT",
             rule_id=alert["rule_id"],
-            severity=alert["severity"],
+            severity=(
+                alert["severity"].value
+                if hasattr(alert["severity"], "value")
+                else str(alert["severity"])
+            ),
             source_ip=alert["source_ip"],
             destination=alert["destination"],
             details=alert["details"],
