@@ -12,6 +12,7 @@ from detection.covert_channel.icmp_detector import (
     ICMP_ECHO_REQUEST,
     LINUX_PING_PATTERN,
     WINDOWS_PING_PAYLOAD,
+    ICMPRateTracker,
     analyze_icmp_message,
     check_content,
     check_structure,
@@ -167,7 +168,7 @@ def test_check_content_detects_sensitive_data(monkeypatch: Any):
     mock_hit = MagicMock()
     mock_hit.rule_id = "fake_api_token"
     mock_hit.detector = "regex"
-    mock_hit.severity = "CRITICAL"
+    mock_hit.severity = Severity.CRITICAL
     mock_hit.matched = "ghp_1234567890abcdef"
     mock_hit.source = "icmp_payload"
     mock_hit.meta = {"entropy": 4.2}
@@ -187,7 +188,7 @@ def test_check_content_detects_sensitive_data(monkeypatch: Any):
     findings = check_content(msg)
     assert len(findings) == 1
     assert findings[0].rule_id == "icmp_sensitive_data_fake_api_token"
-    assert findings[0].severity == "CRITICAL"
+    assert findings[0].severity == Severity.CRITICAL
     assert findings[0].details["matched"] == "ghp_1234567890abcdef"
     assert findings[0].details["detector"] == "regex"
 
@@ -219,3 +220,73 @@ def test_analyze_icmp_message_aggregates_structure_and_content(monkeypatch: Any)
     # Must contain both the structural finding and the content finding
     assert "icmp_oversized_payload" in rule_ids
     assert "icmp_sensitive_data_credit_card" in rule_ids
+
+def test_rate_tracker_normal_frequency():
+    """Verify that pings within the allowed rate (e.g. 1 per second) trigger no findings."""
+    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=4)
+    source_ip = "172.20.0.3"
+
+    # Simulate 3 pings spaced by 0.3s
+    assert tracker.record_and_check(source_ip, timestamp=100.0) == []
+    assert tracker.record_and_check(source_ip, timestamp=100.3) == []
+    assert tracker.record_and_check(source_ip, timestamp=100.6) == []
+
+
+def test_rate_tracker_exceeds_threshold():
+    """Verify that a burst exceeding the threshold generates an alert."""
+    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=4)
+    source_ip = "172.20.0.3"
+
+    # 4 packets in 0.4 seconds (within threshold)
+    for t in [100.0, 100.1, 100.2, 100.3]:
+        assert tracker.record_and_check(source_ip, timestamp=t) == []
+
+    # 5th packet at 100.4s triggers the alert
+    findings = tracker.record_and_check(source_ip, timestamp=100.4)
+    assert len(findings) == 1
+    assert findings[0].rule_id == "icmp_high_frequency"
+    assert findings[0].severity == "high"
+    assert findings[0].details["count"] == 5
+
+
+def test_rate_tracker_sliding_window_eviction():
+    """Verify that older packets slide out of the window and do not cause false positives."""
+    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=4)
+    source_ip = "172.20.0.3"
+
+    # 4 packets at t=100.x
+    for t in [100.0, 100.1, 100.2, 100.3]:
+        tracker.record_and_check(source_ip, timestamp=t)
+
+    # 5th packet arrives at t=101.5 (more than 1s later -> older entries evicted)
+    findings = tracker.record_and_check(source_ip, timestamp=101.5)
+    assert findings == []
+
+
+def test_rate_tracker_ip_isolation():
+    """Verify that rates are tracked independently per source IP."""
+    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=2)
+
+    # IP 1 sends 2 packets
+    tracker.record_and_check("172.20.0.3", timestamp=100.0)
+    tracker.record_and_check("172.20.0.3", timestamp=100.1)
+
+    # IP 2 sends 1 packet at same time: must not trigger
+    findings = tracker.record_and_check("172.20.0.4", timestamp=100.1)
+    assert findings == []
+
+
+def test_analyze_icmp_message_triggers_rate_limit():
+    """Verify analyze_icmp_message invokes the rate tracker when provided."""
+    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=1)
+    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=8)
+    msg = parse_icmp_echo(pkt)
+    assert msg is not None
+
+    # First packet: only structural findings (empty payload deviates from 32/56)
+    f1 = analyze_icmp_message(msg, rate_tracker=tracker, timestamp=10.0)
+    assert not any(f.rule_id == "icmp_high_frequency" for f in f1)
+
+    # Second packet immediately after: triggers rate limit
+    f2 = analyze_icmp_message(msg, rate_tracker=tracker, timestamp=10.1)
+    assert any(f.rule_id == "icmp_high_frequency" for f in f2)

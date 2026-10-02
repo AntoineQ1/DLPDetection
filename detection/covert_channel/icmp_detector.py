@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from detection.common.types import Severity
@@ -22,6 +24,10 @@ WINDOWS_PING_PAYLOAD = b"abcdefghijklmnopqrstuvwabcdefghi"
 LINUX_PING_PATTERN = bytes(range(16, 56))
 STANDARD_PAYLOAD_SIZES = {32, 56}
 MAX_STANDARD_PAYLOAD_SIZE = 64
+
+# Rate limiting defaults (human ping = 1 pkt/s)
+DEFAULT_WINDOW_SECONDS = 1.0
+DEFAULT_MAX_REQUESTS_PER_WINDOW = 4
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,61 @@ class ICMPFinding:
     severity: Severity
     description: str
     details: dict[str, Any] = field(default_factory=dict)
+
+
+class ICMPRateTracker:
+    """Tracks ICMP Echo Request frequencies per source IP over a sliding time window."""
+
+    def __init__(
+        self,
+        window_seconds: float = DEFAULT_WINDOW_SECONDS,
+        max_requests: int = DEFAULT_MAX_REQUESTS_PER_WINDOW,
+    ) -> None:
+        self.window_seconds = window_seconds
+        self.max_requests = max_requests
+        self._history: dict[str, deque[float]] = defaultdict(deque)
+
+    def record_and_check(
+        self,
+        source_ip: str,
+        timestamp: float | None = None,
+    ) -> list[ICMPFinding]:
+        """Record an arrival and check if the source IP exceeded the rate threshold."""
+        now = time.time() if timestamp is None else timestamp
+        window_start = now - self.window_seconds
+
+        queue = self._history[source_ip]
+
+        # Evict timestamps outside the sliding window
+        while queue and queue[0] <= window_start:
+            queue.popleft()
+
+        queue.append(now)
+
+        if len(queue) > self.max_requests:
+            return [
+                ICMPFinding(
+                    rule_id="icmp_high_frequency",
+                    severity="high",
+                    description=(
+                        f"Abnormal ICMP Echo frequency: {len(queue)} requests in "
+                        f"{self.window_seconds:.1f}s window from {source_ip} "
+                        f"(threshold: {self.max_requests})"
+                    ),
+                    details={
+                        "count": len(queue),
+                        "window_seconds": self.window_seconds,
+                        "threshold": self.max_requests,
+                        "source_ip": source_ip,
+                    },
+                )
+            ]
+
+        return []
+
+    def reset(self) -> None:
+        """Clear all tracking state (used primarily for test isolation)."""
+        self._history.clear()
 
 
 def parse_icmp_echo(pkt: Packet) -> ICMPEchoMessage | None:
@@ -160,9 +221,22 @@ def check_content(msg: ICMPEchoMessage) -> list[ICMPFinding]:
     return findings
 
 
-def analyze_icmp_message(msg: ICMPEchoMessage) -> list[ICMPFinding]:
-    """Execute all static heuristics (structural and content inspection) on an ICMP message."""
+def analyze_icmp_message(
+    msg: ICMPEchoMessage,
+    rate_tracker: ICMPRateTracker | None = None,
+    timestamp: float | None = None,
+) -> list[ICMPFinding]:
+    """Execute all heuristics (structural, content, and rate limiting) on an ICMP message."""
     findings: list[ICMPFinding] = []
+
+    # 1. Structural inspection
     findings.extend(check_structure(msg))
+
+    # 2. Content inspection (DLP engine)
     findings.extend(check_content(msg))
+
+    # 3. Behavioral inspection (Rate limiting)
+    if rate_tracker is not None:
+        findings.extend(rate_tracker.record_and_check(msg.source_ip, timestamp=timestamp))
+
     return findings

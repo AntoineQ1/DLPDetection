@@ -6,6 +6,7 @@ from scapy.all import DNS, ICMP, IP, conf, get_if_addr, get_if_list, sniff
 from detection.common.logger import log_alert
 from detection.covert_channel.dns_detector import DnsTunnelDetector, parse_dns_query
 from detection.covert_channel.icmp_detector import (
+    ICMPRateTracker,
     analyze_icmp_message,
     parse_icmp_echo,
 )
@@ -20,12 +21,15 @@ BPF_FILTER = "icmp or udp port 53"
 # per-source state across packets).
 _DNS_DETECTOR = DnsTunnelDetector()
 
+# Stateful tracker for ICMP rate limiting
+_ICMP_RATE_TRACKER = ICMPRateTracker(window_seconds=1.0, max_requests=4)
+
 
 def _handle_icmp(pkt) -> None:
     msg = parse_icmp_echo(pkt)
     if msg is None:
         return
-    for finding in analyze_icmp_message(msg):
+    for finding in analyze_icmp_message(msg, rate_tracker=_ICMP_RATE_TRACKER):
         log_alert(
             channel="covert_icmp",
             rule_id=finding.rule_id,
