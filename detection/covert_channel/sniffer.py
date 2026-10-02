@@ -3,7 +3,7 @@ import time
 
 from scapy.all import DNS, ICMP, IP, conf, get_if_addr, get_if_list, sniff
 
-from detection.common.logger import log_alert
+from detection.common.logger import log_alert, log_debug
 from detection.covert_channel.dns_detector import DnsTunnelDetector, parse_dns_query
 from detection.covert_channel.icmp_detector import (
     ICMPRateTracker,
@@ -33,11 +33,7 @@ def _handle_icmp(pkt) -> None:
         log_alert(
             channel="covert_icmp",
             rule_id=finding.rule_id,
-            severity=(
-                finding.severity.value
-                if hasattr(finding.severity, "value")
-                else str(finding.severity)
-            ),
+            severity=finding.severity,
             source_ip=msg.source_ip,
             destination=msg.destination_ip,
             details={"description": finding.description, **finding.details},
@@ -55,31 +51,29 @@ def _handle_dns(pkt) -> None:
         log_alert(
             channel="DNS_COVERT",
             rule_id=alert["rule_id"],
-            severity=(
-                alert["severity"].value
-                if hasattr(alert["severity"], "value")
-                else str(alert["severity"])
-            ),
+            severity=alert["severity"],
             source_ip=alert["source_ip"],
             destination=alert["destination"],
             details=alert["details"],
             blocked=False,  # passive sniffer: detect-only, gateway does blocking
         )
 
+PROTO_HANDLERS = [
+    (ICMP, _handle_icmp, "ICMP"),
+    (DNS, _handle_dns, "DNS"),
+]
 
 def analyze_packet(pkt) -> None:
     if not pkt.haslayer(IP):
         return
 
-    src_ip = pkt[IP].src
-    dst_ip = pkt[IP].dst
+    ip_layer = pkt[IP]
 
-    print(f"[DEBUG-SNIFFER] Packet intercepted : {src_ip} -> {dst_ip}", flush=True)
-
-    if pkt.haslayer(ICMP):
-        _handle_icmp(pkt)
-    elif pkt.haslayer(DNS):
-        _handle_dns(pkt)
+    for layer, handler, proto_name in PROTO_HANDLERS:
+        if pkt.haslayer(layer):
+            log_debug(proto_name, ip_layer.src, ip_layer.dst)
+            handler(pkt)
+            return
 
 
 def pick_interfaces() -> list[str]:
