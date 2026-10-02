@@ -140,6 +140,17 @@ class DnsTunnelDetector:
 
     def __init__(self) -> None:
         self._flows: dict[tuple[str, str], _FlowState] = {}
+        self._cleanup_counter: int = 0
+
+    def _periodic_cleanup(self, now: float) -> None:
+        cutoff = now - VOLUME_WINDOW_SEC
+        stale_keys = [
+            key
+            for key, state in self._flows.items()
+            if not state.seen or state.seen[-1][0] < cutoff
+        ]
+        for key in stale_keys:
+            del self._flows[key]
 
     def inspect(
         self,
@@ -211,6 +222,10 @@ class DnsTunnelDetector:
     def _update_volume(
         self, src_ip: str, feats: QnameFeatures, qtype: str, now: float
     ) -> dict | None:
+        self._cleanup_counter += 1
+        if self._cleanup_counter % 500 == 0:
+            self._periodic_cleanup(now)
+
         key = (src_ip, feats.apex)
         state = self._flows.get(key)
         if state is None:
@@ -223,7 +238,9 @@ class DnsTunnelDetector:
         if feats.subdomain:
             state.seen.append((now, feats.subdomain))
         state.unique = {sub for _, sub in state.seen}
-
+        if not state.seen:
+            self._flows.pop(key, None)
+            return None
         if len(state.unique) < VOLUME_THRESHOLD:
             state.volume_alerted = False  # reset once traffic quiets down
             return None
