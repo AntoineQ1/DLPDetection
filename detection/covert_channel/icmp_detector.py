@@ -136,7 +136,7 @@ def parse_icmp_echo(pkt: Packet) -> ICMPEchoMessage | None:
 
 def is_known_benign_payload(payload: bytes) -> bool:
     """Check if the payload matches known benign ping patterns (Windows or Linux)."""
-    if (
+    if (  # noqa: SIM103
         payload == WINDOWS_PING_PAYLOAD
         or len(payload) == 56
         and payload[16:] == LINUX_PING_PATTERN
