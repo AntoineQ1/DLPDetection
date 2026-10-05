@@ -6,7 +6,7 @@ In accordance with course guidelines, this document details how generative AI to
 
 Generative AI was strictly restricted to secondary tasks:
 
-- **Report Language Tuning:** Proofreading draft paragraphs for grammatical correctness and clarity. No arguments, descriptions, or report sections were authored by AI. This use may also apply to inline code comments.
+- **Report Language Tuning:** Proofreading draft paragraphs for grammatical correctness and clarity. No arguments, descriptions, or report sections were authored by AI. This use may also apply to inline code comments. When text was first written by project members in their respective mother tongues, it may have been translated with common tools which may use AI (such as DeepL) or with AI LLMs directly.
 - **Background Reading & Source Exploration:** Summarizing technical papers and contextualizing research material related to network DLP.
 - **Unit tests:** Generating unit tests under `tests/`. 
 - **Terminal UI & Cosmetic Formatting:** Generating presentation helpers and terminal styling tools under `ui/` using the `rich` library (progress bars, status panels, alert cards, etc.).
