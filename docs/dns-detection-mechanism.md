@@ -21,7 +21,17 @@ attacker controls. To ordinary DNS infrastructure it just looks like a lot of
 lookups for one domain.
 
 The generator we defend against is `attacks/dns_exfiltrate.py`, whose modes escalate
-in stealth (taxonomy D1–D5):
+in stealth. The taxonomy (D1–D4) is a stealth ladder local to this project — each
+level is harder to catch than the last:
+
+| Level | What the attacker does                    | How we catch it            |
+|-------|-------------------------------------------|----------------------------|
+| D1    | naive plaintext labels                    | length + content/Luhn rules |
+| D2    | encoded (hex / base32 / base64)           | high entropy                |
+| D3    | burst of many queries (`--count`)         | volume to one apex          |
+| D4    | low-and-slow, jittered (`--delay`)        | volume to one apex over time |
+
+The modes below map onto that ladder:
 
 | Mode     | Level | Technique                        | Naive weakness we exploit |
 |----------|-------|----------------------------------|---------------------------|
@@ -30,7 +40,7 @@ in stealth (taxonomy D1–D5):
 | `base32` | D2    | base32 (classic tunnel charset)  | high-entropy label |
 | `base64` | D2    | urlsafe base64                   | high-entropy label |
 | + `--count` | D3 | burst of many queries            | volume to one apex |
-| + `--delay` | D5 | low-and-slow, jittered           | volume to one apex over time |
+| + `--delay` | D4 | low-and-slow, jittered           | volume to one apex over time |
 
 ---
 
@@ -143,7 +153,7 @@ Fires when a single source sends `≥ DNS_VOLUME_THRESHOLD` (default 8) **unique
 subdomains under the **same apex** within a sliding window of
 `DNS_VOLUME_WINDOW_SEC` (default 60s).
 
-Catches the **burst** (D3) and **low-and-slow** (D5) patterns. Even if each query
+Catches the **burst** (D3) and **low-and-slow** (D4) patterns. Even if each query
 were short and low-entropy, tunnelling a real secret still requires many distinct
 lookups to one domain — the pattern gives it away.
 
