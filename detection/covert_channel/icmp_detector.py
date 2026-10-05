@@ -6,10 +6,10 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
-from detection.common.types import Severity
 
 from scapy.layers.inet import ICMP, IP
 
+from detection.common.types import Severity
 from detection.l7_web import scan_all
 
 if TYPE_CHECKING:
@@ -87,7 +87,7 @@ class ICMPRateTracker:
             return [
                 ICMPFinding(
                     rule_id="icmp_high_frequency",
-                    severity="high",
+                    severity=Severity.HIGH,
                     description=(
                         f"Abnormal ICMP Echo frequency: {len(queue)} requests in "
                         f"{self.window_seconds:.1f}s window from {source_ip} "
@@ -110,8 +110,7 @@ class ICMPRateTracker:
 
 
 def parse_icmp_echo(pkt: Packet) -> ICMPEchoMessage | None:
-    """Parse an ICMP Echo Request packet and extract its fields.
-    """
+    """Parse an ICMP Echo Request packet and extract its fields."""
     if not (pkt.haslayer(IP) and pkt.haslayer(ICMP)):
         return None
 
@@ -137,9 +136,11 @@ def parse_icmp_echo(pkt: Packet) -> ICMPEchoMessage | None:
 
 def is_known_benign_payload(payload: bytes) -> bool:
     """Check if the payload matches known benign ping patterns (Windows or Linux)."""
-    if payload == WINDOWS_PING_PAYLOAD:
-        return True
-    elif len(payload) == 56 and payload[16:] == LINUX_PING_PATTERN:
+    if (
+        payload == WINDOWS_PING_PAYLOAD
+        or len(payload) == 56
+        and payload[16:] == LINUX_PING_PATTERN
+    ):
         return True
     else:
         return False
@@ -160,7 +161,10 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
                 rule_id="icmp_oversized_payload",
                 severity=Severity.HIGH,
                 description=f"Payload size ({msg.payload_size} bytes) exceeds standard threshold ({MAX_STANDARD_PAYLOAD_SIZE} bytes)",
-                details={"payload_size": msg.payload_size, "threshold": MAX_STANDARD_PAYLOAD_SIZE},
+                details={
+                    "payload_size": msg.payload_size,
+                    "threshold": MAX_STANDARD_PAYLOAD_SIZE,
+                },
             )
         )
         return findings
@@ -172,7 +176,10 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
                 rule_id="icmp_non_standard_size",
                 severity=Severity.MEDIUM,
                 description=f"Payload size ({msg.payload_size} bytes) deviates from standard OS ping sizes (32, 56)",
-                details={"payload_size": msg.payload_size, "expected_sizes": sorted(STANDARD_PAYLOAD_SIZES)},
+                details={
+                    "payload_size": msg.payload_size,
+                    "expected_sizes": sorted(STANDARD_PAYLOAD_SIZES),
+                },
             )
         )
         return findings
@@ -189,6 +196,7 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
 
     return findings
 
+
 def check_content(msg: ICMPEchoMessage) -> list[ICMPFinding]:
     """Scan the ICMP payload for sensitive data using the shared L7 inspection engine."""
     if not msg.payload:
@@ -202,7 +210,6 @@ def check_content(msg: ICMPEchoMessage) -> list[ICMPFinding]:
     l7_findings = scan_all(decoded_text, source="icmp_payload")
 
     for hit in l7_findings:
-
         findings.append(
             ICMPFinding(
                 rule_id=f"icmp_sensitive_data_{hit.rule_id}",
@@ -237,6 +244,8 @@ def analyze_icmp_message(
 
     # 3. Behavioral inspection (Rate limiting)
     if rate_tracker is not None:
-        findings.extend(rate_tracker.record_and_check(msg.source_ip, timestamp=timestamp))
+        findings.extend(
+            rate_tracker.record_and_check(msg.source_ip, timestamp=timestamp)
+        )
 
     return findings
