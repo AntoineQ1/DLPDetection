@@ -10,12 +10,13 @@ is scored) lives here.
 detection logic then operates on plain strings/ints, so it is unit-testable
 without live capture. Alert logging is done by ``sniffer.py``.
 
-Complementary rules cover the attack's stealth ladder (D1..D5):
+Complementary rules cover the attack's stealth ladder (D1..D4, defined in
+docs/dns-detection-mechanism.md):
 
   DNS_LONG_QNAME          long overall qname / long single label  -> catches D1 naive
   DNS_SENSITIVE_DATA_*    L7 content rules (regex/Luhn) on labels -> catches D1 naive content
   DNS_HIGH_ENTROPY        encoded (random-looking) labels          -> catches D2 hex/base32/base64
-  DNS_TUNNEL_VOLUME       many unique subdomains under one apex     -> catches D3 burst / D5 slow
+  DNS_TUNNEL_VOLUME       many unique subdomains under one apex     -> catches D3 burst / D4 slow
 
 Thresholds are environment-overridable so the lab can be tuned without edits.
 """
@@ -79,8 +80,10 @@ def parse_dns_query(pkt: Packet) -> DnsQuery | None:
     if not (pkt.haslayer(IP) and pkt.haslayer(DNS)):
         return None
     dns = pkt[DNS]
-    # qdcount can be None on freshly-built packets; qd presence is the reliable check.
-    # qd is a list of questions in scapy >= 2.6; we inspect the first one.
+    # scapy parses the raw packet into named layers, so pkt[DNS] reads DNS fields directly.
+    # qr is the query/response bit: we keep only queries (qr == 0), since the reply echoes
+    # the same qname and scoring both would double-count every subdomain.
+    # qd is the questions list; we check it directly (qdcount can be None) and use the first.
     if dns.qr != 0 or not dns.qd:
         return None
 
