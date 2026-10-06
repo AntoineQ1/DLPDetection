@@ -1,4 +1,13 @@
-"""Unit tests for the ICMP covert channel detection engine."""
+"""Comprehensive Automated Test Suite for ICMP Covert Channel Detection Engine.
+
+This module provides exhaustive unit test scenarios validating packet ingestion,
+structural payload heuristics, deep content inspection, and temporal sliding-window
+rate tracking against ICMP-based exfiltration vectors.
+
+THIS FILE IS AI GENERATED.
+"""
+
+from __future__ import annotations
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -20,273 +29,385 @@ from detection.covert_channel.icmp_detector import (
     parse_icmp_echo,
 )
 
+# Standard mock IP address configuration constants
+MOCK_SOURCE_HOST_IP: str = "172.20.0.3"
+MOCK_DESTINATION_HOST_IP: str = "172.21.0.10"
+MOCK_ALTERNATE_HOST_IP: str = "172.20.0.4"
+
+
+# =====================================================================
+# Synthetic Payload Fixture Helpers
+# =====================================================================
+
 
 def _build_linux_payload() -> bytes:
-    """Generate a 56-byte Linux ping payload with a dummy 16-byte timeval prefix."""
-    dummy_timeval = b"\x00" * 16
-    return dummy_timeval + LINUX_PING_PATTERN
+    """Synthesizes a standardized 56-byte Linux ping payload buffer.
+
+    Prepends a 16-byte zeroed timestamp emulation header (`timeval` struct)
+    to the canonical Linux ASCII pattern sequence.
+
+    Returns:
+        bytes: Raw byte buffer emulating authentic Linux ping payloads.
+    """
+    synthetic_timestamp_header_bytes: bytes = b"\x00" * 16
+    return synthetic_timestamp_header_bytes + LINUX_PING_PATTERN
 
 
-def test_parse_icmp_echo_valid():
-    """Check that a valid ICMP Echo Request packet is parsed correctly."""
-    raw_data = WINDOWS_PING_PAYLOAD
-    pkt = (
-        IP(src="172.20.0.3", dst="172.21.0.10")
+# =====================================================================
+# Ingestion & Protocol Parsing Validation Suites
+# =====================================================================
+
+
+def test_parse_icmp_echo_valid() -> None:
+    """Validates that a compliant ICMP Echo Request frame is extracted correctly."""
+    # Prepare standard Windows baseline payload buffer
+    emulated_payload_buffer: bytes = WINDOWS_PING_PAYLOAD
+
+    # Synthesize multi-layer protocol frame (IP / ICMP Echo / Raw)
+    synthesized_packet_frame = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
         / ICMP(type=ICMP_ECHO_REQUEST, id=0x1234, seq=1)
-        / Raw(load=raw_data)
+        / Raw(load=emulated_payload_buffer)
     )
 
-    parsed = parse_icmp_echo(pkt)
+    # Ingest and parse packet telemetry model
+    extracted_icmp_telemetry = parse_icmp_echo(synthesized_packet_frame)
 
-    assert parsed is not None
-    assert parsed.source_ip == "172.20.0.3"
-    assert parsed.destination_ip == "172.21.0.10"
-    assert parsed.icmp_type == 8
-    assert parsed.icmp_id == 0x1234
-    assert parsed.icmp_seq == 1
-    assert parsed.payload == raw_data
-    assert parsed.payload_size == 32
-
-
-def test_parse_icmp_ignores_echo_reply():
-    """Ensures only Echo Request messages are parsed, not Echo Replies."""
-    pkt = IP(src="172.21.0.10", dst="172.20.0.3") / ICMP(
-        type=ICMP_ECHO_REPLY, id=0x1234, seq=1
-    )
-
-    parsed = parse_icmp_echo(pkt)
-    assert parsed is None
+    # Assert accurate field extraction and invariant properties
+    assert extracted_icmp_telemetry is not None
+    assert extracted_icmp_telemetry.source_ip == MOCK_SOURCE_HOST_IP
+    assert extracted_icmp_telemetry.destination_ip == MOCK_DESTINATION_HOST_IP
+    assert extracted_icmp_telemetry.icmp_type == 8
+    assert extracted_icmp_telemetry.icmp_id == 0x1234
+    assert extracted_icmp_telemetry.icmp_seq == 1
+    assert extracted_icmp_telemetry.payload == emulated_payload_buffer
+    assert extracted_icmp_telemetry.payload_size == 32
 
 
-def test_parse_icmp_ignores_non_icmp_traffic():
-    """Ensure that non-ICMP packets are ignored by the ICMP parser."""
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / TCP(dport=80)
+def test_parse_icmp_ignores_echo_reply() -> None:
+    """Ensures parser filters out ICMP Echo Reply frames to prevent telemetry pollution."""
+    synthesized_reply_packet = IP(
+        src=MOCK_DESTINATION_HOST_IP, dst=MOCK_SOURCE_HOST_IP
+    ) / ICMP(type=ICMP_ECHO_REPLY, id=0x1234, seq=1)
 
-    parsed = parse_icmp_echo(pkt)
-    assert parsed is None
-
-
-def test_parse_icmp_handles_empty_payload():
-    """Test the parsing of an empty ICMP Echo Request (no payload)."""
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST)
-
-    parsed = parse_icmp_echo(pkt)
-    assert parsed is not None
-    assert parsed.payload == b""
-    assert parsed.payload_size == 0
+    extracted_telemetry = parse_icmp_echo(synthesized_reply_packet)
+    assert extracted_telemetry is None
 
 
-def test_benign_payload_validation():
-    """Verify that legitimate Windows and Linux payloads pass validation."""
+def test_parse_icmp_ignores_non_icmp_traffic() -> None:
+    """Verifies that non-ICMP network traffic is systematically ignored by the parser."""
+    synthesized_tcp_packet = IP(
+        src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP
+    ) / TCP(dport=80)
+
+    extracted_telemetry = parse_icmp_echo(synthesized_tcp_packet)
+    assert extracted_telemetry is None
+
+
+def test_parse_icmp_handles_empty_payload() -> None:
+    """Verifies telemetry extraction resilience when processing payload-less Echo Requests."""
+    synthesized_empty_packet = IP(
+        src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP
+    ) / ICMP(type=ICMP_ECHO_REQUEST)
+
+    extracted_telemetry = parse_icmp_echo(synthesized_empty_packet)
+
+    assert extracted_telemetry is not None
+    assert extracted_telemetry.payload == b""
+    assert extracted_telemetry.payload_size == 0
+
+
+# =====================================================================
+# Benign Baseline & Whitelist Validation Suites
+# =====================================================================
+
+
+def test_benign_payload_validation() -> None:
+    """Validates baseline pattern whitelist recognition against synthetic noise buffers."""
     assert is_known_benign_payload(WINDOWS_PING_PAYLOAD) is True
     assert is_known_benign_payload(_build_linux_payload()) is True
     assert is_known_benign_payload(b"X" * 32) is False
     assert is_known_benign_payload(b"X" * 56) is False
 
 
-def test_structure_benign_traffic_yields_no_findings():
-    """Verify that standard Linux and Windows pings raise zero findings."""
-    pkt_linux = (
-        IP(src="172.20.0.3", dst="172.21.0.10")
+def test_structure_benign_traffic_yields_no_findings() -> None:
+    """Ensures legitimate Linux and Windows ping flows produce zero anomaly findings."""
+    # Synthesize authentic Linux telemetry model
+    linux_frame = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
         / ICMP(type=ICMP_ECHO_REQUEST)
         / Raw(load=_build_linux_payload())
     )
-    msg_linux = parse_icmp_echo(pkt_linux)
-    assert msg_linux is not None
-    assert check_structure(msg_linux) == []
+    linux_telemetry_model = parse_icmp_echo(linux_frame)
+    assert linux_telemetry_model is not None
+    assert check_structure(linux_telemetry_model) == []
 
-    pkt_win = (
-        IP(src="172.20.0.3", dst="172.21.0.10")
+    # Synthesize authentic Windows telemetry model
+    windows_frame = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
         / ICMP(type=ICMP_ECHO_REQUEST)
         / Raw(load=WINDOWS_PING_PAYLOAD)
     )
-    msg_win = parse_icmp_echo(pkt_win)
-    assert msg_win is not None
-    assert check_structure(msg_win) == []
+    windows_telemetry_model = parse_icmp_echo(windows_frame)
+    assert windows_telemetry_model is not None
+    assert check_structure(windows_telemetry_model) == []
 
 
-def test_structure_oversized_payload():
-    """Verify detection of bulk payload exfiltration (> 64 bytes)."""
-    bulk_data = b"CONFIDENTIAL_DATA_LEAK_" * 4
-    pkt = (
-        IP(src="172.20.0.3", dst="172.21.0.10")
+# =====================================================================
+# Structural Heuristic & Anomaly Detection Suites
+# =====================================================================
+
+
+def test_structure_oversized_payload() -> None:
+    """Verifies detection of volumetric anomaly exceeding standard payload threshold (>64B)."""
+    exfiltration_payload_buffer: bytes = b"CONFIDENTIAL_DATA_LEAK_" * 4
+    synthesized_oversized_packet = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
         / ICMP(type=ICMP_ECHO_REQUEST)
-        / Raw(load=bulk_data)
+        / Raw(load=exfiltration_payload_buffer)
     )
-    msg = parse_icmp_echo(pkt)
+    parsed_telemetry_model = parse_icmp_echo(synthesized_oversized_packet)
 
-    assert msg is not None
-    findings = check_structure(msg)
-    assert len(findings) == 1
-    assert findings[0].rule_id == "icmp_oversized_payload"
-    assert findings[0].severity == Severity.HIGH
+    assert parsed_telemetry_model is not None
+    detected_structural_findings = check_structure(parsed_telemetry_model)
+
+    assert len(detected_structural_findings) == 1
+    assert detected_structural_findings[0].rule_id == "icmp_oversized_payload"
+    assert detected_structural_findings[0].severity == Severity.HIGH
 
 
-def test_structure_non_standard_size():
-    """Verify detection of non-standard payload lengths (e.g., 20 bytes)."""
-    short_data = b"exfiltrated_password"
-    pkt = (
-        IP(src="172.20.0.3", dst="172.21.0.10")
+def test_structure_non_standard_size() -> None:
+    """Verifies heuristic alerting on abnormal non-standard payload dimensions."""
+    arbitrary_size_payload: bytes = b"exfiltrated_password"
+    synthesized_abnormal_packet = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
         / ICMP(type=ICMP_ECHO_REQUEST)
-        / Raw(load=short_data)
+        / Raw(load=arbitrary_size_payload)
     )
-    msg = parse_icmp_echo(pkt)
+    parsed_telemetry_model = parse_icmp_echo(synthesized_abnormal_packet)
 
-    assert msg is not None
-    findings = check_structure(msg)
-    assert len(findings) == 1
-    assert findings[0].rule_id == "icmp_non_standard_size"
-    assert findings[0].severity == Severity.MEDIUM
+    assert parsed_telemetry_model is not None
+    detected_structural_findings = check_structure(parsed_telemetry_model)
+
+    assert len(detected_structural_findings) == 1
+    assert detected_structural_findings[0].rule_id == "icmp_non_standard_size"
+    assert detected_structural_findings[0].severity == Severity.MEDIUM
 
 
-def test_structure_evasion_chunking_with_forged_pattern():
-    """Verify detection when payload size matches 56 bytes but content is forged."""
-    evasion_data = b"A" * 56
-    pkt = (
-        IP(src="172.20.0.3", dst="172.21.0.10")
+def test_structure_evasion_chunking_with_forged_pattern() -> None:
+    """Verifies identification of forged payloads disguised using canonical byte sizes."""
+    crafted_evasion_payload: bytes = b"A" * 56
+    synthesized_evasion_packet = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
         / ICMP(type=ICMP_ECHO_REQUEST)
-        / Raw(load=evasion_data)
+        / Raw(load=crafted_evasion_payload)
     )
-    msg = parse_icmp_echo(pkt)
+    parsed_telemetry_model = parse_icmp_echo(synthesized_evasion_packet)
 
-    assert msg is not None
-    findings = check_structure(msg)
-    assert len(findings) == 1
-    assert findings[0].rule_id == "icmp_abnormal_pattern"
-    assert findings[0].severity == Severity.MEDIUM
+    assert parsed_telemetry_model is not None
+    detected_structural_findings = check_structure(parsed_telemetry_model)
 
-def test_check_content_empty_or_whitespace_payload():
-    """Verify that an empty or whitespace-only payload produces no findings."""
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=b"   \t\n  ")
-    msg = parse_icmp_echo(pkt)
-    assert msg is not None
-    assert check_content(msg) == []
+    assert len(detected_structural_findings) == 1
+    assert detected_structural_findings[0].rule_id == "icmp_abnormal_pattern"
+    assert detected_structural_findings[0].severity == Severity.MEDIUM
 
 
-def test_check_content_detects_sensitive_data(monkeypatch: Any):
-    """Verify that sensitive substrings in ICMP payload trigger L7 scan_all detection."""
-    mock_hit = MagicMock()
-    mock_hit.rule_id = "fake_api_token"
-    mock_hit.detector = "regex"
-    mock_hit.severity = Severity.CRITICAL
-    mock_hit.matched = "ghp_1234567890abcdef"
-    mock_hit.source = "icmp_payload"
-    mock_hit.meta = {"entropy": 4.2}
+# =====================================================================
+# Deep Packet Inspection & Content Heuristics Suites
+# =====================================================================
 
-    # Intercept scan_all to test icmp_detector in strict isolation
+
+def test_check_content_empty_or_whitespace_payload() -> None:
+    """Verifies that purely whitespace or unpopulated buffers trigger zero signatures."""
+    synthesized_whitespace_packet = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
+        / ICMP(type=ICMP_ECHO_REQUEST)
+        / Raw(load=b"   \t\n  ")
+    )
+    parsed_telemetry_model = parse_icmp_echo(synthesized_whitespace_packet)
+    assert parsed_telemetry_model is not None
+    assert check_content(parsed_telemetry_model) == []
+
+
+def test_check_content_detects_sensitive_data(monkeypatch: Any) -> None:
+    """Verifies that embedded credential patterns trigger L7 deep content detection."""
+    # Instantiate mocked signature match object
+    mocked_signature_match = MagicMock()
+    mocked_signature_match.rule_id = "fake_api_token"
+    mocked_signature_match.detector = "regex"
+    mocked_signature_match.severity = Severity.CRITICAL
+    mocked_signature_match.matched = "ghp_1234567890abcdef"
+    mocked_signature_match.source = "icmp_payload"
+    mocked_signature_match.meta = {"entropy": 4.2}
+
+    # Intercept scanning orchestrator to isolate payload inspection mechanics
     monkeypatch.setattr(
         "detection.covert_channel.icmp_detector.scan_all",
-        lambda text, source: [mock_hit] if "ghp_" in text else [],
+        lambda text, source: [mocked_signature_match] if "ghp_" in text else [],
     )
 
-    # Payload with binary noise prepended before the token
-    noisy_payload = b"\x00\xff\xfe" + b"ghp_1234567890abcdef" + b"\x00"
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=noisy_payload)
-    msg = parse_icmp_echo(pkt)
-    assert msg is not None
+    # Synthesize payload with prepended binary encapsulation noise
+    synthesized_token_payload = b"\x00\xff\xfe" + b"ghp_1234567890abcdef" + b"\x00"
+    synthesized_packet = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
+        / ICMP(type=ICMP_ECHO_REQUEST)
+        / Raw(load=synthesized_token_payload)
+    )
+    parsed_telemetry_model = parse_icmp_echo(synthesized_packet)
+    assert parsed_telemetry_model is not None
 
-    findings = check_content(msg)
-    assert len(findings) == 1
-    assert findings[0].rule_id == "icmp_sensitive_data_fake_api_token"
-    assert findings[0].severity == Severity.CRITICAL
-    assert findings[0].details["matched"] == "ghp_1234567890abcdef"
-    assert findings[0].details["detector"] == "regex"
+    detected_content_findings = check_content(parsed_telemetry_model)
+    assert len(detected_content_findings) == 1
+    assert detected_content_findings[0].rule_id == "icmp_sensitive_data_fake_api_token"
+    assert detected_content_findings[0].severity == Severity.CRITICAL
+    assert detected_content_findings[0].details["matched"] == "ghp_1234567890abcdef"
+    assert detected_content_findings[0].details["detector"] == "regex"
 
 
-def test_analyze_icmp_message_aggregates_structure_and_content(monkeypatch: Any):
-    """Verify that analyze_icmp_message combines both structural and content findings."""
-    mock_hit = MagicMock()
-    mock_hit.rule_id = "credit_card"
-    mock_hit.detector = "luhn"
-    mock_hit.severity = Severity.HIGH
-    mock_hit.matched = "4532015112830366"
-    mock_hit.source = "icmp_payload"
-    mock_hit.meta = {}
+def test_analyze_icmp_message_aggregates_structure_and_content(
+    monkeypatch: Any,
+) -> None:
+    """Verifies aggregation pipeline fuses both structural anomalies and content alerts."""
+    mocked_signature_match = MagicMock()
+    mocked_signature_match.rule_id = "credit_card"
+    mocked_signature_match.detector = "luhn"
+    mocked_signature_match.severity = Severity.HIGH
+    mocked_signature_match.matched = "4532015112830366"
+    mocked_signature_match.source = "icmp_payload"
+    mocked_signature_match.meta = {}
 
     monkeypatch.setattr(
         "detection.covert_channel.icmp_detector.scan_all",
-        lambda text, source: [mock_hit],
+        lambda text, source: [mocked_signature_match],
     )
 
-    # Oversized payload (80 bytes) containing a sensitive number
-    leak_data = b"4532015112830366" + b"A" * 64
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=ICMP_ECHO_REQUEST) / Raw(load=leak_data)
-    msg = parse_icmp_echo(pkt)
-    assert msg is not None
+    # Build oversized payload (80 bytes) encapsulating sensitive payment card digits
+    composite_leak_payload = b"4532015112830366" + b"A" * 64
+    synthesized_composite_packet = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
+        / ICMP(type=ICMP_ECHO_REQUEST)
+        / Raw(load=composite_leak_payload)
+    )
+    parsed_telemetry_model = parse_icmp_echo(synthesized_composite_packet)
+    assert parsed_telemetry_model is not None
 
-    all_findings = analyze_icmp_message(msg)
-    rule_ids = [f.rule_id for f in all_findings]
+    aggregated_detection_findings = analyze_icmp_message(parsed_telemetry_model)
+    triggered_rule_identifiers: list[str] = [
+        finding.rule_id for finding in aggregated_detection_findings
+    ]
 
-    # Must contain both the structural finding and the content finding
-    assert "icmp_oversized_payload" in rule_ids
-    assert "icmp_sensitive_data_credit_card" in rule_ids
-
-def test_rate_tracker_normal_frequency():
-    """Verify that pings within the allowed rate (e.g. 1 per second) trigger no findings."""
-    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=4)
-    source_ip = "172.20.0.3"
-
-    # Simulate 3 pings spaced by 0.3s
-    assert tracker.record_and_check(source_ip, timestamp=100.0) == []
-    assert tracker.record_and_check(source_ip, timestamp=100.3) == []
-    assert tracker.record_and_check(source_ip, timestamp=100.6) == []
+    # Validate presence of both heterogeneous detection layers
+    assert "icmp_oversized_payload" in triggered_rule_identifiers
+    assert "icmp_sensitive_data_credit_card" in triggered_rule_identifiers
 
 
-def test_rate_tracker_exceeds_threshold():
-    """Verify that a burst exceeding the threshold generates an alert."""
-    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=4)
-    source_ip = "172.20.0.3"
-
-    # 4 packets in 0.4 seconds (within threshold)
-    for t in [100.0, 100.1, 100.2, 100.3]:
-        assert tracker.record_and_check(source_ip, timestamp=t) == []
-
-    # 5th packet at 100.4s triggers the alert
-    findings = tracker.record_and_check(source_ip, timestamp=100.4)
-    assert len(findings) == 1
-    assert findings[0].rule_id == "icmp_high_frequency"
-    assert findings[0].severity == "high"
-    assert findings[0].details["count"] == 5
+# =====================================================================
+# Temporal Rate Limiting & Sliding Window Suites
+# =====================================================================
 
 
-def test_rate_tracker_sliding_window_eviction():
-    """Verify that older packets slide out of the window and do not cause false positives."""
-    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=4)
-    source_ip = "172.20.0.3"
+def test_rate_tracker_normal_frequency() -> None:
+    """Verifies that transmissions within established temporal thresholds trigger no alerts."""
+    telemetry_rate_tracker = ICMPRateTracker(window_seconds=1.0, max_requests=4)
+    target_source_host: str = MOCK_SOURCE_HOST_IP
 
-    # 4 packets at t=100.x
-    for t in [100.0, 100.1, 100.2, 100.3]:
-        tracker.record_and_check(source_ip, timestamp=t)
-
-    # 5th packet arrives at t=101.5 (more than 1s later -> older entries evicted)
-    findings = tracker.record_and_check(source_ip, timestamp=101.5)
-    assert findings == []
-
-
-def test_rate_tracker_ip_isolation():
-    """Verify that rates are tracked independently per source IP."""
-    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=2)
-
-    # IP 1 sends 2 packets
-    tracker.record_and_check("172.20.0.3", timestamp=100.0)
-    tracker.record_and_check("172.20.0.3", timestamp=100.1)
-
-    # IP 2 sends 1 packet at same time: must not trigger
-    findings = tracker.record_and_check("172.20.0.4", timestamp=100.1)
-    assert findings == []
+    # Simulate sequential ping events distributed within permissible rate window
+    assert (
+        telemetry_rate_tracker.record_and_check(target_source_host, timestamp=100.0)
+        == []
+    )
+    assert (
+        telemetry_rate_tracker.record_and_check(target_source_host, timestamp=100.3)
+        == []
+    )
+    assert (
+        telemetry_rate_tracker.record_and_check(target_source_host, timestamp=100.6)
+        == []
+    )
 
 
-def test_analyze_icmp_message_triggers_rate_limit():
-    """Verify analyze_icmp_message invokes the rate tracker when provided."""
-    tracker = ICMPRateTracker(window_seconds=1.0, max_requests=1)
-    pkt = IP(src="172.20.0.3", dst="172.21.0.10") / ICMP(type=8)
-    msg = parse_icmp_echo(pkt)
-    assert msg is not None
+def test_rate_tracker_exceeds_threshold() -> None:
+    """Verifies high-frequency packet emission bursts accurately breach detection limits."""
+    telemetry_rate_tracker = ICMPRateTracker(window_seconds=1.0, max_requests=4)
+    target_source_host: str = MOCK_SOURCE_HOST_IP
 
-    # First packet: only structural findings (empty payload deviates from 32/56)
-    f1 = analyze_icmp_message(msg, rate_tracker=tracker, timestamp=10.0)
-    assert not any(f.rule_id == "icmp_high_frequency" for f in f1)
+    # Transmit 4 packets in 0.4 seconds (within configured limit)
+    for sample_timestamp in [100.0, 100.1, 100.2, 100.3]:
+        assert (
+            telemetry_rate_tracker.record_and_check(
+                target_source_host, timestamp=sample_timestamp
+            )
+            == []
+        )
 
-    # Second packet immediately after: triggers rate limit
-    f2 = analyze_icmp_message(msg, rate_tracker=tracker, timestamp=10.1)
-    assert any(f.rule_id == "icmp_high_frequency" for f in f2)
+    # 5th transmission at t=100.4s exceeds rate envelope
+    rate_limit_findings = telemetry_rate_tracker.record_and_check(
+        target_source_host, timestamp=100.4
+    )
+    assert len(rate_limit_findings) == 1
+    assert rate_limit_findings[0].rule_id == "icmp_high_frequency"
+    assert rate_limit_findings[0].severity == "high"
+    assert rate_limit_findings[0].details["count"] == 5
+
+
+def test_rate_tracker_sliding_window_eviction() -> None:
+    """Verifies time-decay sliding window successfully purges stale historical samples."""
+    telemetry_rate_tracker = ICMPRateTracker(window_seconds=1.0, max_requests=4)
+    target_source_host: str = MOCK_SOURCE_HOST_IP
+
+    # Ingest 4 initial packets at baseline timestamp
+    for sample_timestamp in [100.0, 100.1, 100.2, 100.3]:
+        telemetry_rate_tracker.record_and_check(
+            target_source_host, timestamp=sample_timestamp
+        )
+
+    # 5th packet arrives post-window interval (>1.0s); older entries are evicted
+    eviction_findings = telemetry_rate_tracker.record_and_check(
+        target_source_host, timestamp=101.5
+    )
+    assert eviction_findings == []
+
+
+def test_rate_tracker_ip_isolation() -> None:
+    """Verifies rate tracking isolation across distinct source IP originators."""
+    telemetry_rate_tracker = ICMPRateTracker(window_seconds=1.0, max_requests=2)
+
+    # Primary host transmits 2 packets
+    telemetry_rate_tracker.record_and_check(MOCK_SOURCE_HOST_IP, timestamp=100.0)
+    telemetry_rate_tracker.record_and_check(MOCK_SOURCE_HOST_IP, timestamp=100.1)
+
+    # Secondary host transmits concurrently without inheriting primary host threshold
+    isolated_host_findings = telemetry_rate_tracker.record_and_check(
+        MOCK_ALTERNATE_HOST_IP, timestamp=100.1
+    )
+    assert isolated_host_findings == []
+
+
+def test_analyze_icmp_message_triggers_rate_limit() -> None:
+    """Verifies analyze_icmp_message integrates live tracking into evaluation pipeline."""
+    telemetry_rate_tracker = ICMPRateTracker(window_seconds=1.0, max_requests=1)
+    synthesized_echo_frame = IP(
+        src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP
+    ) / ICMP(type=8)
+    parsed_telemetry_model = parse_icmp_echo(synthesized_echo_frame)
+    assert parsed_telemetry_model is not None
+
+    # First transmission: evaluates structural anomalies only
+    initial_findings = analyze_icmp_message(
+        parsed_telemetry_model,
+        rate_tracker=telemetry_rate_tracker,
+        timestamp=10.0,
+    )
+    assert not any(
+        finding.rule_id == "icmp_high_frequency" for finding in initial_findings
+    )
+
+    # Subsequent transmission triggers rate limit finding
+    subsequent_findings = analyze_icmp_message(
+        parsed_telemetry_model,
+        rate_tracker=telemetry_rate_tracker,
+        timestamp=10.1,
+    )
+    assert any(
+        finding.rule_id == "icmp_high_frequency" for finding in subsequent_findings
+    )
