@@ -33,17 +33,62 @@ Our detection model builds upon established content and behavioral analysis tech
 The lab isolates four roles across two bridged subnets (`internal_net` and `external_net`):
 
 ```text
-[ Victim ] (172.20.0.3)
-    │
-    │  internal_net (172.20.0.0/24)
-    ▼
-[ Gateway ] (172.20.0.2 / 172.21.0.2)
-    ├── Inline Proxy (mitmproxy :8080)   ──> Intercepts HTTP/HTTPS (L7 Web DLP)
-    └── Passive Sniffer (covert-detector) ──> Shared netns: sniffs internal eth (ICMP & DNS)
-    │
-    │  external_net (172.21.0.0/24)
-    ▼
-[ Attacker ] (172.21.0.10) (C2 sinks: HTTP, DNS, ICMP)
++-----------------------------------------------------------------------------------+
+| INTERNAL NETWORK: internal_net (172.20.0.0/24)                                    |
+|                                                                                   |
+|   +--------------------------+                                                    |
+|   |      Victim Host         |                                                    |
+|   |      (172.20.0.3)        |                                                    |
+|   | Default Route -> Gateway |                                                    |
+|   +------------+-------------+                                                    |
++----------------|------------------------------------------------------------------+
+                 |
+                 | All Egress Traffic
+                 v
++-----------------------------------------------------------------------------------+
+| GATEWAY HOST (Shared Network Namespace)                                           |
+|                                                                                   |
+|   [ Inbound NIC: 172.20.0.2 ]                                                     |
+|          |                                                                        |
+|          +--- [ L3/L4 Covert Traffic: ICMP / UDP:53 ] ------------------------+   |
+|          |    (Captured BEFORE NAT for real IP attribution)                   |   |
+|          |                                                                    v   |
+|          |                                            +-------------------------+ |
+|          |                                            | Covert Sniffer (Scapy)  | |
+|          |                                            |  - ICMP Heuristics      | |
+|          |                                            |  - DNS Entropy & Volume | |
+|          |                                            +------------+------------+ |
+|          |                                                         |              |
+|          v                                                         v [DLP-ALERT]  |
+|   [ iptables PREROUTING ]                                    (Passive Log)        |
+|          |                                                                        |
+|          +---> TCP 80/443 --[ REDIRECT :8080 ]-----> +-------------------------+   |
+|          |                                          |   mitmproxy (Inline)    |   |
+|          |                                          |    Web DLP Addon        |   |
+|          |                                          |  (Luhn, Regex, Entropy) |   |
+|          |                                          +------------+------------+   |
+|          |                                                       |                |
+|          | [ Non-HTTP & Benign Traffic ]                         | HTTP 403 Block |
+|          v                                                       x (if match)     |
+|   [ iptables POSTROUTING: MASQUERADE ]                           |                |
+|          |                                                       | 200 OK (Clean) |
+|          +----------------------------+--------------------------+                |
+|                                       |                                           |
+|   [ Outbound NIC: 172.21.0.2 ]        |                                           |
++---------------------------------------|-------------------------------------------+
+                                        |
++---------------------------------------|-------------------------------------------+
+| EXTERNAL NETWORK: external_net (172.21.0.0/24)                                    |
+|                                       |                                           |
+|                                       v                                           |
+|                        +------------------------------+                           |
+|                        |        Attacker Sinks        |                           |
+|                        |        (172.21.0.10)         |                           |
+|                        |  - HTTP C2 Sink   (:80)      |                           |
+|                        |  - DNS C2 Sink    (:53)      |                           |
+|                        |  - ICMP Echo Sink (Listener) |                           |
+|                        +------------------------------+                           |
++-----------------------------------------------------------------------------------+
 ```
 
 * **L7 Web Gateway:** Routes outbound TCP ports 80/443 into `mitmproxy` running in transparent mode. Drops requests carrying sensitive matches with `HTTP 403 Forbidden`.
