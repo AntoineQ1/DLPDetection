@@ -414,6 +414,7 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 attacker = [
+    { name = "rich" },
     { name = "scapy" },
 ]
 dev = [
@@ -436,7 +437,10 @@ victim = [
 [package.metadata]
 
 [package.metadata.requires-dev]
-attacker = [{ name = "scapy" }]
+attacker = [
+    { name = "rich" },
+    { name = "scapy" },
+]
 dev = [
     { name = "mitmproxy" },
     { name = "pytest" },
