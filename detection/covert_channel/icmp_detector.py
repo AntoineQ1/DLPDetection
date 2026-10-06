@@ -1,21 +1,15 @@
-"""ICMP covert channel detection engine - Parsing & structural heuristics."""
-
-from __future__ import annotations
-
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from scapy.layers.inet import ICMP, IP
+from scapy.packet import Packet
 
 from detection.common.types import Severity
 from detection.l7_web import scan_all
 
-if TYPE_CHECKING:
-    from scapy.packet import Packet
-
-# Constants RFC 792 for message types
+# RFC 792 message types
 ICMP_ECHO_REQUEST = 8
 ICMP_ECHO_REPLY = 0
 
@@ -25,15 +19,13 @@ LINUX_PING_PATTERN = bytes(range(16, 56))
 STANDARD_PAYLOAD_SIZES = {32, 56}
 MAX_STANDARD_PAYLOAD_SIZE = 64
 
-# Rate limiting defaults (human ping = 1 pkt/s)
+# Default rate limits (standard ping is around 1 pkt/s)
 DEFAULT_WINDOW_SECONDS = 1.0
 DEFAULT_MAX_REQUESTS_PER_WINDOW = 4
 
 
 @dataclass(frozen=True)
 class ICMPEchoMessage:
-    """Represents a parsed ICMP Echo Request message with its fields."""
-
     source_ip: str
     destination_ip: str
     icmp_type: int
@@ -46,8 +38,6 @@ class ICMPEchoMessage:
 
 @dataclass(frozen=True)
 class ICMPFinding:
-    """Represents a finding from an ICMP anomaly detected in a packet."""
-
     rule_id: str
     severity: Severity
     description: str
@@ -55,7 +45,7 @@ class ICMPFinding:
 
 
 class ICMPRateTracker:
-    """Tracks ICMP Echo Request frequencies per source IP over a sliding time window."""
+    """Sliding-window tracker to detect ICMP bursts per source IP."""
 
     def __init__(
         self,
@@ -71,13 +61,12 @@ class ICMPRateTracker:
         source_ip: str,
         timestamp: float | None = None,
     ) -> list[ICMPFinding]:
-        """Record an arrival and check if the source IP exceeded the rate threshold."""
         now = time.time() if timestamp is None else timestamp
         window_start = now - self.window_seconds
 
         queue = self._history[source_ip]
 
-        # Evict timestamps outside the sliding window
+        # Drop timestamps older than the sliding window
         while queue and queue[0] <= window_start:
             queue.popleft()
 
@@ -90,7 +79,7 @@ class ICMPRateTracker:
                     severity=Severity.HIGH,
                     description=(
                         f"Abnormal ICMP Echo frequency: {len(queue)} requests in "
-                        f"{self.window_seconds:.1f}s window from {source_ip} "
+                        f"{self.window_seconds:.1f}s from {source_ip} "
                         f"(threshold: {self.max_requests})"
                     ),
                     details={
@@ -105,58 +94,47 @@ class ICMPRateTracker:
         return []
 
     def reset(self) -> None:
-        """Clear all tracking state (used primarily for test isolation)."""
         self._history.clear()
 
 
 def parse_icmp_echo(pkt: Packet) -> ICMPEchoMessage | None:
-    """Parse an ICMP Echo Request packet and extract its fields."""
+    """Extract relevant fields from an ICMP Echo Request packet."""
     if not (pkt.haslayer(IP) and pkt.haslayer(ICMP)):
         return None
 
-    icmp_layer = pkt[ICMP]
-
-    # Only process Echo Request messages (type 8) (not Echo Reply)
-    if icmp_layer.type != ICMP_ECHO_REQUEST:
+    icmp = pkt[ICMP]
+    if icmp.type != ICMP_ECHO_REQUEST:
         return None
 
-    payload_bytes = bytes(icmp_layer.payload)
+    payload = bytes(icmp.payload)
 
     return ICMPEchoMessage(
         source_ip=pkt[IP].src,
         destination_ip=pkt[IP].dst,
-        icmp_type=icmp_layer.type,
-        icmp_code=icmp_layer.code,
-        icmp_id=getattr(icmp_layer, "id", None),
-        icmp_seq=getattr(icmp_layer, "seq", None),
-        payload=payload_bytes,
-        payload_size=len(payload_bytes),
+        icmp_type=icmp.type,
+        icmp_code=icmp.code,
+        icmp_id=getattr(icmp, "id", None),
+        icmp_seq=getattr(icmp, "seq", None),
+        payload=payload,
+        payload_size=len(payload),
     )
 
 
 def is_known_benign_payload(payload: bytes) -> bool:
-    """Check if the payload matches known benign ping patterns (Windows or Linux)."""
-    if (  # noqa: SIM103
-        payload == WINDOWS_PING_PAYLOAD
-        or len(payload) == 56
-        and payload[16:] == LINUX_PING_PATTERN
-    ):
-        return True
-    else:
-        return False
+    """Check if payload matches standard Windows or Linux ping data."""
+    return payload == WINDOWS_PING_PAYLOAD or (
+        len(payload) == 56 and payload[16:] == LINUX_PING_PATTERN
+    )
 
 
 def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
-    """Check the structure of the ICMP Echo Request message for anomalies."""
-    findings: list[ICMPFinding] = []
-
-    # Ignore known benign payloads to reduce false positives
+    """Inspect payload size and pattern for structural anomalies."""
     if is_known_benign_payload(msg.payload):
-        return findings
+        return []
 
-    # Case 1: Payload size exceeds standard threshold
+    # 1. Payload exceeds standard size
     if msg.payload_size > MAX_STANDARD_PAYLOAD_SIZE:
-        findings.append(
+        return [
             ICMPFinding(
                 rule_id="icmp_oversized_payload",
                 severity=Severity.HIGH,
@@ -166,12 +144,11 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
                     "threshold": MAX_STANDARD_PAYLOAD_SIZE,
                 },
             )
-        )
-        return findings
+        ]
 
-    # Case 2: Payload size is non-standard (not 32 or 56 bytes)
+    # 2. Non-standard payload size
     if msg.payload_size not in STANDARD_PAYLOAD_SIZES:
-        findings.append(
+        return [
             ICMPFinding(
                 rule_id="icmp_non_standard_size",
                 severity=Severity.MEDIUM,
@@ -181,24 +158,21 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
                     "expected_sizes": sorted(STANDARD_PAYLOAD_SIZES),
                 },
             )
-        )
-        return findings
+        ]
 
-    # Case 3: Altered content (attempt to evade by chunking)
-    findings.append(
+    # 3. Standard size (32 or 56B), but altered content
+    return [
         ICMPFinding(
             rule_id="icmp_abnormal_pattern",
             severity=Severity.MEDIUM,
             description=f"Payload size is {msg.payload_size} bytes but content does not match standard OS ping signature",
             details={"payload_size": msg.payload_size},
         )
-    )
-
-    return findings
+    ]
 
 
 def check_content(msg: ICMPEchoMessage) -> list[ICMPFinding]:
-    """Scan the ICMP payload for sensitive data using the shared L7 inspection engine."""
+    """Scan payload text for sensitive data using the L7 engine."""
     if not msg.payload:
         return []
 
@@ -207,14 +181,12 @@ def check_content(msg: ICMPEchoMessage) -> list[ICMPFinding]:
         return []
 
     findings: list[ICMPFinding] = []
-    l7_findings = scan_all(decoded_text, source="icmp_payload")
-
-    for hit in l7_findings:
+    for hit in scan_all(decoded_text, source="icmp_payload"):
         findings.append(
             ICMPFinding(
                 rule_id=f"icmp_sensitive_data_{hit.rule_id}",
                 severity=hit.severity,
-                description=f"Sensitive content detected in ICMP payload via L7 rule '{hit.rule_id}'",
+                description=f"Sensitive content detected in ICMP payload via rule '{hit.rule_id}'",
                 details={
                     "matched": hit.matched,
                     "detector": hit.detector,
@@ -233,16 +205,12 @@ def analyze_icmp_message(
     rate_tracker: ICMPRateTracker | None = None,
     timestamp: float | None = None,
 ) -> list[ICMPFinding]:
-    """Execute all heuristics (structural, content, and rate limiting) on an ICMP message."""
+    """Run all detection checks (structure, content, rate) on an ICMP message."""
     findings: list[ICMPFinding] = []
 
-    # 1. Structural inspection
     findings.extend(check_structure(msg))
-
-    # 2. Content inspection (DLP engine)
     findings.extend(check_content(msg))
 
-    # 3. Behavioral inspection (Rate limiting)
     if rate_tracker is not None:
         findings.extend(
             rate_tracker.record_and_check(msg.source_ip, timestamp=timestamp)

