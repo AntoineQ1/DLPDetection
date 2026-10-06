@@ -30,69 +30,16 @@ Our detection model builds upon established content and behavioral analysis tech
 
 ## Architecture & Topology
 
-The lab isolates four roles across two bridged subnets (`internal_net` and `external_net`):
+The gateway operates a dual-homed server, bridging an isolated internal network (`172.20.0.0/24`) with an untrusted external network (`172.21.0.0/24`):
 
 ```text
-+-----------------------------------------------------------------------------------+
-| INTERNAL NETWORK: internal_net (172.20.0.0/24)                                    |
-|                                                                                   |
-|   +--------------------------+                                                    |
-|   |      Victim Host         |                                                    |
-|   |      (172.20.0.3)        |                                                    |
-|   | Default Route -> Gateway |                                                    |
-|   +------------+-------------+                                                    |
-+----------------|------------------------------------------------------------------+
-                 |
-                 | All Egress Traffic
-                 v
-+-----------------------------------------------------------------------------------+
-| GATEWAY HOST (Shared Network Namespace)                                           |
-|                                                                                   |
-|   [ Inbound NIC: 172.20.0.2 ]                                                     |
-|          |                                                                        |
-|          +--- [ L3/L4 Covert Traffic: ICMP / UDP:53 ] ------------------------+   |
-|          |    (Captured BEFORE NAT for real IP attribution)                   |   |
-|          |                                                                    v   |
-|          |                                            +-------------------------+ |
-|          |                                            | Covert Sniffer (Scapy)  | |
-|          |                                            |  - ICMP Heuristics      | |
-|          |                                            |  - DNS Entropy & Volume | |
-|          |                                            +------------+------------+ |
-|          |                                                         |              |
-|          v                                                         v [DLP-ALERT]  |
-|   [ iptables PREROUTING ]                                    (Passive Log)        |
-|          |                                                                        |
-|          +---> TCP 80/443 --[ REDIRECT :8080 ]-----> +-------------------------+   |
-|          |                                          |   mitmproxy (Inline)    |   |
-|          |                                          |    Web DLP Addon        |   |
-|          |                                          |  (Luhn, Regex, Entropy) |   |
-|          |                                          +------------+------------+   |
-|          |                                                       |                |
-|          | [ Non-HTTP & Benign Traffic ]                         | HTTP 403 Block |
-|          v                                                       x (if match)     |
-|   [ iptables POSTROUTING: MASQUERADE ]                           |                |
-|          |                                                       | 200 OK (Clean) |
-|          +----------------------------+--------------------------+                |
-|                                       |                                           |
-|   [ Outbound NIC: 172.21.0.2 ]        |                                           |
-+---------------------------------------|-------------------------------------------+
-                                        |
-+---------------------------------------|-------------------------------------------+
-| EXTERNAL NETWORK: external_net (172.21.0.0/24)                                    |
-|                                       |                                           |
-|                                       v                                           |
-|                        +------------------------------+                           |
-|                        |        Attacker Sinks        |                           |
-|                        |        (172.21.0.10)         |                           |
-|                        |  - HTTP C2 Sink   (:80)      |                           |
-|                        |  - DNS C2 Sink    (:53)      |                           |
-|                        |  - ICMP Echo Sink (Listener) |                           |
-|                        +------------------------------+                           |
-+-----------------------------------------------------------------------------------+
+[ Victim: 172.20.0.3 ] ──(internal_net)──> [ Gateway: 172.20.0.2 / 172.21.0.2 ] ──(external_net)──> [ Attacker: 172.21.0.10 ]
+                                                ├── L7 Web: Transparent Proxy (mitmproxy :8080)
+                                                └── Covert: Passive Sniffer (covert-detector)
+
 ```
 
-* **L7 Web Gateway:** Routes outbound TCP ports 80/443 into `mitmproxy` running in transparent mode. Drops requests carrying sensitive matches with `HTTP 403 Forbidden`.
-* **Covert Sniffer:** Runs in the gateway's network namespace (`network_mode: "service:gateway"`). It inspects packets on the internal network interface **before NAT**, preserving accurate client attribution (`source_ip`) and avoiding duplicate packet counts.
+> For the comprehensive technical specification, see **[docs/architecture.md](docs/architecture.md)**.
 
 
 ## Repository Structure
@@ -227,12 +174,13 @@ Both the inline proxy and passive sniffers output standardized JSON records pref
 
 ## Documentation Index
 
-* **[docs/demo_guide.md](https://www.google.com/search?q=docs/demo_guide.md)**: End-to-end evaluation cheat sheet and demo steps.
-* **[docs/icmp-detection-mecanism.md](https://www.google.com/search?q=docs/icmp-detection-mecanism.md)**: ICMP structural checks, rate-limiting, and deep content inspection.
-* **[docs/dns-detection-mechanism.md](https://www.google.com/search?q=docs/dns-detection-mechanism.md)**: DNS tunneling taxonomy (D1–D4), Shannon entropy, and volume heuristics.
-* **[docs/uv_guide.md](https://www.google.com/search?q=docs/uv_guide.md)**: Dependency management and workflow with `uv`.
-* **[docs/evaluating-hardening-branches.md](https://www.google.com/search?q=docs/evaluating-hardening-branches.md)**: Git evaluation procedure for defense hardening branches.
-* **[docs/AI_USE.md](https://www.google.com/search?q=docs/AI_USE.md)**: Academic statement on generative AI usage.
+- **[docs/architecture.md](docs/architecture.md)**: Full network topology, container orchestration, routing, and interception design.
+- **[docs/demo_guide.md](https://www.google.com/search?q=docs/demo_guide.md)**: End-to-end evaluation cheat sheet and demo steps.
+- **[docs/icmp-detection-mecanism.md](https://www.google.com/search?q=docs/icmp-detection-mecanism.md)**: ICMP structural checks, rate-limiting, and deep content inspection.
+- **[docs/dns-detection-mechanism.md](https://www.google.com/search?q=docs/dns-detection-mechanism.md)**: DNS tunneling taxonomy (D1–D4), Shannon entropy, and volume heuristics.
+- **[docs/uv_guide.md](https://www.google.com/search?q=docs/uv_guide.md)**: Dependency management and workflow with `uv`.
+- **[docs/evaluating-hardening-branches.md](https://www.google.com/search?q=docs/evaluating-hardening-branches.md)**: Git evaluation procedure for defense hardening branches.
+- **[docs/AI_USE.md](https://www.google.com/search?q=docs/AI_USE.md)**: Academic statement on generative AI usage.
 
 
 ## Ethics & Usage
