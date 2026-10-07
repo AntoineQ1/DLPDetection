@@ -3,6 +3,7 @@ from collections.abc import Callable
 from mitmproxy import http
 
 from detection.common.logger import log_alert
+from detection.common.mask import mask
 from detection.l7_web import scan_all
 from detection.l7_web.decoder import decode_body
 
@@ -40,7 +41,7 @@ class WebDlpAddon:
                 destination=target_host,
                 details={
                     "findings": [
-                        {"rule_id": f.rule_id, "matched": f.matched} for f in findings
+                        {"rule_id": f.rule_id, "matched": mask(f.matched)} for f in findings
                     ]
                 },
                 blocked=True,
