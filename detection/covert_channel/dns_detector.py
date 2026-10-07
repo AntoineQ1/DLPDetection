@@ -61,6 +61,10 @@ ENTROPY_MIN_CHARS = int(os.environ.get("DNS_ENTROPY_MIN_CHARS", "16"))
 VOLUME_THRESHOLD = int(os.environ.get("DNS_VOLUME_THRESHOLD", "8"))
 VOLUME_WINDOW_SEC = float(os.environ.get("DNS_VOLUME_WINDOW_SEC", "60"))
 
+# Volume rule: if a single query has too many sub-labels, it is treated as suspicious.
+SUB_LABEL_COUNT_THRESHOLD = int(
+    os.environ.get("DNS_SUB_LABEL_COUNT_THRESHOLD", "4")
+)
 
 QTYPE_NAMES = {1: "A", 16: "TXT", 28: "AAAA"}
 
@@ -108,6 +112,7 @@ class QnameFeatures:
     sub_labels: list[str]   # the individual labels left of the apex
     longest_label: int
     total_len: int
+    sub_label_count: int
     entropy: float
 
 
@@ -126,6 +131,7 @@ def extract_features(qname: str) -> QnameFeatures:
         sub_labels=sub_labels,
         longest_label=longest,
         total_len=len(qname),
+        sub_label_count=len(sub_labels),
         entropy=shannon_entropy(subdomain),
     )
 
@@ -172,11 +178,14 @@ class DnsTunnelDetector:
         alerts: list[dict] = []
 
         # Rule 1: content-agnostic length (fires on naive plaintext too).
-        if feats.longest_label >= LABEL_LEN_THRESHOLD or feats.total_len >= QNAME_LEN_THRESHOLD:
+        if (feats.longest_label >= LABEL_LEN_THRESHOLD 
+            or feats.total_len >= QNAME_LEN_THRESHOLD
+            or feats.sub_label_count >= SUB_LABEL_COUNT_THRESHOLD
+            ):
             alerts.append(
                 self._alert(
                     "DNS_LONG_QNAME", Severity.MEDIUM, src_ip, feats, qtype,
-                    {"longest_label": feats.longest_label, "qname_len": feats.total_len},
+                    {"longest_label": feats.longest_label, "qname_len": feats.total_len, "sub_label_count": feats.sub_label_count},
                 )
             )
 
