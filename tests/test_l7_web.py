@@ -205,8 +205,13 @@ def test_flatten_scalars_bare_string():
     assert _flatten_scalars("hello") == ["hello"]
 
 
-def test_flatten_scalars_ignores_numeric_and_bool():
-    assert _flatten_scalars({"n": 42, "b": True, "x": None, "s": "keep"}) == ["keep"]
+def test_flatten_scalars_coerces_numeric_and_bool_to_string():
+    # None stays ignored; numerics and bools come back str()-coerced
+    assert sorted(_flatten_scalars({"n": 42, "b": True, "x": None, "s": "keep"})) == [
+        "42",
+        "True",
+        "keep",
+    ]
 
 
 def test_flatten_scalars_recurses_into_lists_and_dicts():
@@ -252,10 +257,11 @@ def test_decode_body_urlencoded_keeps_blank_values():
 # --- decode_body: JSON ---
 
 
-def test_decode_body_json_extracts_strings_from_nested_object():
+def test_decode_body_json_extracts_scalars_from_nested_object():
     body = b'{"user":{"payment":{"cc":"4111-1111-1111-1111"},"name":"Max"},"amount":42}'
     assert sorted(decode_body(body, "application/json")) == [
         "4111-1111-1111-1111",
+        "42",
         "Max",
     ]
 
