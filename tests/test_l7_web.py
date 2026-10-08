@@ -343,3 +343,20 @@ def test_decode_body_respects_content_type_with_charset_parameter():
 
 
 # === END DECODER TESTS ===
+
+# === SHANON ENTROPY TESTS ===
+def test_entropy_detects_high_entropy_token():
+    findings = scan_all(_OPENAI_USER)
+    assert any(f.rule_id == "high_entropy" for f in findings)
+
+def test_entropy_ignores_normal_text():
+    text = "this is just a normal entropy english sentence"
+    findings = scan_all(text)
+    assert not any(f.rule_id == "high_entropy" for f in findings)
+
+def test_entropy_ignores_low_entropy_long_string():
+    text = "a" * 100
+    findings = scan_all(text)
+    assert not any(f.rule_id == "high_entropy" for f in findings)
+
+# === END SHANON ENTROPY TESTS ===
