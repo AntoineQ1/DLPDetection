@@ -32,6 +32,11 @@ class WebDlpAddon:
         for value in decode_body(content, content_type):
             findings.extend(self.scanner(value))
 
+        # 3. Inpection Headers
+        for key, value in flow.request.headers.items():
+            findings.extend(self.scanner(key))
+            findings.extend(self.scanner(value))
+
         if findings:
             log_alert(
                 channel="L7_WEB",
