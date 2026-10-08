@@ -15,17 +15,35 @@ Containerized network security environnement with a gateway designed to detect a
 
 ## Problem Statement
 
-While standard perimeter security predominantly focuses on preventing intrusion and lateral movement, a robust security posture must assume compromise and restrict what actors can extract ; directly defending the **Confidentiality** pillar of the CIA triad. Network Data Loss Prevention (DLP) addresses this challenge by identifying and intercepting unauthorized data outputs.
+While standard perimeter security predominantly focuses on preventing intrusion and lateral movement, a robust security posture must assume compromise and restrict what actors can extract ; directly defending the **Confidentiality** pillar of the CIA triad. *Network Data Loss Prevention (DLP)* addresses this challenge by identifying and intercepting unauthorized data outputs.
 
-In practice, data leaks fall into two distinct categories:
+**In practice, data leaks fall into two distinct categories:**
 - **Accidental & Negligent Exposure:** Legitimate users committing operational mistakes ; such as pasting sensitive credentials into web forms, transmitting unencrypted payment card data, or uploading corporate data to unapproved personal devices.
 - **Intentional & Adversarial Exfiltration:** Malicious insiders or compromised devices deliberately evading standard proxy filters by tunneling stolen secrets through lower-level protocols (such as ICMP echo payloads or DNS queries).
 
 To address both fronts, this project implements a gateway with two layers: deterministic L7 content inspection, as well as passive L3/L4 covert-channel analysis. Rather than testing detection logic as isolated scripts, our systems are embedded directly into a containerized network topology mirroring a real-world enterprise deployment so as to evaluate detection efficiency, flaws, latency, and false positives under live conditions.
 
-## Related Work
+### Threat Model & Assumptions
 
-Our detection model builds upon established content and behavioral analysis techniques. At the application layer, deterministic pattern matching and Luhn algorithm validation mirror production DLP engines. For covert channels, our ICMP heuristics draw inspiration from Sayadi et al. (*Detection of Covert Channels Over ICMP Protocol*, AICCSA 2017), contrasting standard operating system ping invariants with abnormal payloads and rates. DNS tunneling detection relies on classical information theory (Shannon entropy) combined with sliding-window volume metrics per apex domain.
+We evaluate traffic originating from an internal client (`172.20.0.3`), covering both adversarial activity (an attacker with remote code execution or a malicious insider) and accidental exposure by authorized users (e.g., pasting API tokens, submitting cleartext payment records). In all scenarios, the objective is to prevent sensitive data from leaving the monitored boundary toward an untrusted external endpoint (`172.21.0.10`).
+
+#### 1. In-Scope Attack Vectors
+
+* **Application-Layer Leaks (WS B - L7 Web):**
+  * *PII Exposure:* Cleartext form submissions containing structured records (e.g., credit card numbers validated via regex and Luhn checksum).
+  * *Credentials & Secrets:* High-entropy strings (raw API tokens, private keys, Base64-encoded secrets) in HTTP request bodies, URIs, or JSON payloads.
+  * *Encoding Evasion:* Standard payload transformations intended to bypass naive string matching.
+
+* **Network-Layer Covert Channels (WS C - L3/L4):**
+  * *ICMP Tunneling:* Arbitrary data smuggled into ICMP Echo Request payloads, detectable via payload size anomalies, static padding patterns, or burst frequency.
+  * *DNS Covert Channels:* Exfiltration via subdomain labels resolved against an attacker-controlled apex domain.
+
+#### 2. Out-of-Scope & Security Assumptions
+
+* **Gateway Platform Integrity:** The gateway host OS, Docker runtime, and detector process are trusted. Host escapes and kernel exploits are out of scope.
+* **TLS Trust Boundary:** Internal clients trust the gateway's root CA, allowing standard TLS termination and cleartext payload inspection at L7.
+* **Advanced Steganography:** Multimedia data hiding or other custom disguised encrypted protocols.
+* **Out-of-Band Channels:** Physical side-channels, cellular links, or any egress path bypassing our gateway topology.
 
 
 ## Architecture & Topology
@@ -186,3 +204,20 @@ Both the inline proxy and passive sniffers output standardized JSON records pref
 ## Ethics & Usage
 
 Academic project. Do not deploy or execute against external networks without explicit authorization. See [LICENSE.md](LICENSE.md).
+
+## References
+
+### 1. Protocols & Core Standards
+- Postel, J. (1981). *Internet Control Message Protocol*. RFC 792. IETF. [https://www.rfc-editor.org/rfc/rfc792](https://www.rfc-editor.org/rfc/rfc792)
+- Mockapetris, P. (1987). *Domain Names - Implementation and Specification*. RFC 1035. IETF. [https://www.rfc-editor.org/rfc/rfc1035](https://www.rfc-editor.org/rfc/rfc1035)
+- Fielding, R., Nottingham, M., & Reschke, J. (2022). *HTTP Semantics*. RFC 9110. IETF. [https://www.rfc-editor.org/rfc/rfc9110](https://www.rfc-editor.org/rfc/rfc9110)
+
+### 2. Workstream B: L7 Web DLP & Content Inspection
+- *[Placeholder: Add any specific sources or papers used by Diogo & Jonas]*
+
+### 3. Workstream C: ICMP Covert Channel Detection
+- Sayadi, A., Lehsaini, M., & Bitam, S. (2017). *Detection of Covert Channels Over ICMP Protocol*. In 2017 IEEE/ACS 14th International Conference on Computer Systems and Applications (AICCSA) (pp. 573–579). IEEE.
+- *[Placeholder: Add any specific sources or papers used by Antoine]*
+
+### 4. Workstream C: DNS Covert Channel Detection
+- *[Placeholder: Add any specific sources or papers used by Sofia]*
