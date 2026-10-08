@@ -1,6 +1,6 @@
 # Network Data Loss Prevention (DLP) Project for DD2391
 
-Containerized network security environnement with a gateway designed to detect and mitigate unauthorized data exfiltration across both standard application traffic and network-level covert channels.
+Containerized network security environment with a gateway designed to detect and mitigate unauthorized data exfiltration across both standard application traffic and network-level covert channels.
 
 
 ## Team & Workstreams
@@ -15,11 +15,11 @@ Containerized network security environnement with a gateway designed to detect a
 
 ## Problem Statement
 
-While standard perimeter security predominantly focuses on preventing intrusion and lateral movement, a robust security posture must assume compromise and restrict what actors can extract ; directly defending the **Confidentiality** pillar of the CIA triad. *Network Data Loss Prevention (DLP)* addresses this challenge by identifying and intercepting unauthorized data outputs.
+While standard perimeter security predominantly focuses on preventing intrusion and lateral movement, a robust security posture must assume compromise and restrict what actors can extract, directly defending the **Confidentiality** pillar of the CIA triad. *Network Data Loss Prevention (DLP)* addresses this challenge by identifying and intercepting unauthorized data outputs.
 
 **In practice, data leaks fall into two distinct categories:**
-- **Accidental & Negligent Exposure:** Legitimate users committing operational mistakes ; such as pasting sensitive credentials into web forms, transmitting unencrypted payment card data, or uploading corporate data to unapproved personal devices.
-- **Intentional & Adversarial Exfiltration:** Malicious insiders or compromised devices deliberately evading standard proxy filters by tunneling stolen secrets through lower-level protocols (such as ICMP echo payloads or DNS queries).
+  - **Accidental & Negligent Exposure:** Legitimate users committing operational mistakes, such as pasting sensitive credentials into web forms, transmitting unencrypted payment card data, or uploading corporate data to unapproved personal devices.
+  - **Intentional & Adversarial Exfiltration:** Malicious insiders or compromised devices deliberately evading standard proxy filters by tunneling stolen secrets through lower-level protocols (such as ICMP echo payloads or DNS queries).
 
 To address both fronts, this project implements a gateway with two layers: deterministic L7 content inspection, as well as passive L3/L4 covert-channel analysis. Rather than testing detection logic as isolated scripts, our systems are embedded directly into a containerized network topology mirroring a real-world enterprise deployment so as to evaluate detection efficiency, flaws, latency, and false positives under live conditions.
 
@@ -79,7 +79,7 @@ The DLP gateway is deployed as a dual-homed bridge separating the trusted enterp
 |          |                                            +------------+------------+ |
 |          |                                                         |              |
 |          v                                                         v              |
-|   [ iptables PREROUTING ]                                  Log and/or Block       |
+|   [ iptables PREROUTING ]                                 Log and/or Block        |
 |          |                                                                        |
 |          +---> TCP 80/443 --[ REDIRECT :8080 ]------> +-------------------------+ |
 |          |                                            |   mitmproxy (Inline)    | |
@@ -87,7 +87,7 @@ The DLP gateway is deployed as a dual-homed bridge separating the trusted enterp
 |          |                                            +------------+------------+ |
 |          |                                                         |              |
 |          | [ Other traffic ]                                       v              |
-|          v                                                 Log and/or Block       |
+|          v                                                Log and/or Block        |
 |   [ iptables POSTROUTING: MASQUERADE ]                             |              |
 |          |                                                         |              |
 |          +----------------------------+----------------------------+              |
@@ -124,9 +124,11 @@ The DLP gateway is deployed as a dual-homed bridge separating the trusted enterp
 Standard operating systems generate predictable ICMP Echo Request packets. To detect data tunneling without introducing inline latency, `icmp_detector.py` evaluates captured frames using three passive checks:
 
 - **Structural Invariant Verification (`check_structure`):** Standard OS ping utilities use consistent payload layouts (Linux defaults to 56 bytes with an 8-byte kernel timestamp; Windows uses 32 fixed ASCII bytes). Packets deviating from these conventions trigger:
-  - `icmp_oversized_payload` (Severity: HIGH): Payloads exceeding the standard 64-byte limit (`MAX_STANDARD_PAYLOAD_SIZE`).
-  - `icmp_non_standard_size` (Severity: MEDIUM): Frame sizes deviating from standard 32- or 56-byte patterns.
-  - `icmp_abnormal_pattern` (Severity: MEDIUM): Standard-sized frames containing arbitrary exfiltrated bytes instead of expected OS byte sequences.
+- `icmp_oversized_payload` (Severity: HIGH): Payloads exceeding the standard 64-byte limit (`MAX_STANDARD_PAYLOAD_SIZE`).
+- `icmp_non_standard_size` (Severity: MEDIUM): Frame sizes deviating from standard 32- or 56-byte patterns.
+- `icmp_abnormal_pattern` (Severity: MEDIUM): Standard-sized frames containing arbitrary exfiltrated bytes instead of expected OS byte sequences.
+
+
 - **Payload Content Scanning (`check_content`):** Payloads that pass structural checks are forwarded to the shared L7 engine (`detection.l7_web.scan_all`) to flag cleartext credentials or credit cards embedded in the data.
 - **Sliding-Window Frequency Tracking (`ICMPRateTracker`):** Tracks packet timestamps per source IP over a 1.0-second sliding window (`collections.deque`), raising `icmp_high_frequency` if request rates exceed 4 packets/second.
 
@@ -136,11 +138,9 @@ Standard operating systems generate predictable ICMP Echo Request packets. To de
 
 `[PLACEHOLDER - Sofia]`
 
-
 #### 3.3 DNS Covert Tunnel Detection (WS C)
 
 `[PLACEHOLDER - Sofia]`
-
 
 *(Detailed design available in `docs/dns-detection-mechanism.md`).*
 
@@ -183,7 +183,6 @@ Adversarial testing against the baseline DNS detector uncovered algorithmic flaw
 
 `[PLACEHOLDER - Diogo, Jonas & Sofia]`
 
-
 ## Repository Structure
 
 ```text
@@ -202,15 +201,12 @@ pyproject.toml         # Python environment managed by uv
 
 ```
 
-
 ## Quick Start
-
 
 ### 1. Prerequisites
 
 - Docker & Docker Compose
-- [uv](https://docs.astral.sh/uv/) (recommended for local development and offline testing; see [docs/uv_guide.md](https://www.google.com/search?q=docs/uv_guide.md))
-
+- [uv](https://docs.astral.sh/uv/) (recommended for local development and offline testing; see [docs/uv_guide.md](docs/uv_guide.md))
 
 ### 2. Launch the Lab
 
@@ -229,11 +225,9 @@ docker compose ps
 
 ```
 
-
 ## Verification & Demos
 
 > For complete walk-throughs and expected alert outputs, see the **[Live Demo Cheatsheet](https://www.google.com/search?q=docs/demo_guide.md)**.
-
 
 ### 1. Web Layer DLP (Inline Blocking)
 
@@ -247,7 +241,6 @@ docker compose exec victim curl -i -X POST [http://172.21.0.10/](http://172.21.0
 ```
 
 *Inspect logs:* `docker compose logs -f gateway`
-
 
 ### 2. ICMP Covert Channel (Passive Detection)
 
@@ -264,7 +257,6 @@ docker compose exec victim python attacks/icmp_exfiltrate.py --mode oversized
 
 *Inspect logs:* `docker compose logs -f covert-detector`
 
-
 ### 3. DNS Covert Channel (Passive Detection)
 
 ```bash
@@ -276,7 +268,6 @@ docker compose exec victim python attacks/dns_exfiltrate.py --secret "CONFIDENTI
 *Details & stealth levels (D1–D4):* [docs/dns-detection-mechanism.md](https://www.google.com/search?q=docs/dns-detection-mechanism.md)
 
 *Inspect logs:* `docker compose logs -f covert-detector`
-
 
 ## Local Development & Offline Tests
 
@@ -290,7 +281,6 @@ uv sync
 uv run pytest
 
 ```
-
 
 ## Standardized Alert Format
 
@@ -313,17 +303,15 @@ Both the inline proxy and passive sniffers output standardized JSON records pref
 
 ```
 
-
 ## Documentation Index
 
 - **[docs/architecture.md](docs/architecture.md)**: Full network topology, container orchestration, routing, and interception design.
-- **[docs/demo_guide.md](https://www.google.com/search?q=docs/demo_guide.md)**: End-to-end evaluation cheat sheet and demo steps.
-- **[docs/icmp-detection-mecanism.md](https://www.google.com/search?q=docs/icmp-detection-mecanism.md)**: ICMP structural checks, rate-limiting, and deep content inspection.
-- **[docs/dns-detection-mechanism.md](https://www.google.com/search?q=docs/dns-detection-mechanism.md)**: DNS tunneling taxonomy (D1–D4), Shannon entropy, and volume heuristics.
-- **[docs/uv_guide.md](https://www.google.com/search?q=docs/uv_guide.md)**: Dependency management and workflow with `uv`.
-- **[docs/evaluating-hardening-branches.md](https://www.google.com/search?q=docs/evaluating-hardening-branches.md)**: Git evaluation procedure for defense hardening branches.
-- **[docs/AI_USE.md](https://www.google.com/search?q=docs/AI_USE.md)**: Academic statement on generative AI usage.
-
+- **[docs/demo_guide.md](docs/demo_guide.md)**: End-to-end evaluation cheat sheet and demo steps.
+- **[docs/icmp-detection-mecanism.md](docs/icmp-detection-mecanism.md)**: ICMP structural checks, rate-limiting, and deep content inspection.
+- **[docs/dns-detection-mechanism.md](docs/dns-detection-mechanism.md)**: DNS tunneling taxonomy (D1–D4), Shannon entropy, and volume heuristics.
+- **[docs/uv_guide.md](docs/uv_guide.md)**: Dependency management and workflow with `uv`.
+- **[docs/evaluating-hardening-branches.md](docs/evaluating-hardening-branches.md)**: Git evaluation procedure for defense hardening branches.
+- **[docs/AI_USE.md](docs/AI_USE.md)**: Academic statement on generative AI usage.
 
 ## Ethics & Usage
 
@@ -332,20 +320,23 @@ Academic project. Do not deploy or execute against external networks without exp
 ## References
 
 ### 1. Protocols & Core Standards
+
 - Postel, J. (1981). *Internet Control Message Protocol*. RFC 792. IETF. [https://www.rfc-editor.org/rfc/rfc792](https://www.rfc-editor.org/rfc/rfc792)
 - Mockapetris, P. (1987). *Domain Names - Implementation and Specification*. RFC 1035. IETF. [https://www.rfc-editor.org/rfc/rfc1035](https://www.rfc-editor.org/rfc/rfc1035)
 - Fielding, R., Nottingham, M., & Reschke, J. (2022). *HTTP Semantics*. RFC 9110. IETF. [https://www.rfc-editor.org/rfc/rfc9110](https://www.rfc-editor.org/rfc/rfc9110)
 
 ### 2. Workstream B: L7 Web DLP & Content Inspection
+
 - *[Placeholder: Add any specific sources or papers used by Diogo & Jonas]*
 
 ### 3. Workstream C: ICMP Covert Channel Detection
+
 - Sayadi, A., Lehsaini, M., & Bitam, S. (2017). *Detection of Covert Channels Over ICMP Protocol*. In 2017 IEEE/ACS 14th International Conference on Computer Systems and Applications (AICCSA) (pp. 573–579). IEEE.
 - *[Placeholder: Add any specific sources or papers used by Antoine]*
 
 ### 4. Workstream C: DNS Covert Channel Detection
-- *[Placeholder: Add any specific sources or papers used by Sofia]*
 
+- *[Placeholder: Add any specific sources or papers used by Sofia]*
 
 ## Individual contributions
 
@@ -360,7 +351,7 @@ Academic project. Do not deploy or execute against external networks without exp
 
 #### 2. ICMP covert channel detection & validation (WS C)
 
-- **Protocol & related use as a covert channel research :** Analyzed ICMP protocol mechanics and prior research (Sayadi et al., AICCSA 2017) to examine how echo requests can be exploited for covert data exfiltration and to establish baseline heuristics based on normal OS behavior.
+- **Protocol & related use as a covert channel research:** Analyzed ICMP protocol mechanics and prior research (Sayadi et al., AICCSA 2017) to examine how echo requests can be exploited for covert data exfiltration and to establish baseline heuristics based on normal OS behavior.
 - **Detection pipeline (`icmp_detector.py`):** Built a passive inspection module combining:
   - *Structural checks:* Profiled benign Linux (56-byte kernel timestamp) and Windows (32-byte sequence) defaults to flag oversized (> 64 B), unexpected lengths, or non-standard payloads.
   - *Rate limiting:* Tracked per-source frequency using a sliding window to catch burst exfiltration.
@@ -377,6 +368,6 @@ Academic project. Do not deploy or execute against external networks without exp
 
 #### 4. Documentation, integration & team coordination
 
-- **Report authoring:** Structured the primary `README.md` report, drafting the shared overarching sections (problem statement, threat model) as well as the chapters dedicated to my work (network architecture, ICMP covert detection, DNS evasion hardening as well as the section you are currently reading).
+- **Report authoring:** Structured the primary `README.md` report, drafting the shared overarching sections (problem statement, threat model) as well as the chapters dedicated to my work (network architecture, ICMP covert detection, DNS evasion hardening, as well as the section you are currently reading).
 - **Technical guides & demo setup:** Authored detailed standalone reference guides (`architecture.md`, `icmp-detection-mecanism.md`, and `dns-evasion-hardening.md`) and initiated `demo_guide.md` to provide a clear walk-through for testing and demo execution.
 - **Collaborative QA & governance:** Opened GitHub issues to flag detection blind spots and logic bugs in peer code, authored defensive PRs, and drafted the team's academic integrity policy (`AI_USE.md`).
