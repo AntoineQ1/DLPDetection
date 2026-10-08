@@ -29,35 +29,159 @@ We evaluate traffic originating from an internal client (`172.20.0.3`), covering
 
 #### 1. In-Scope Attack Vectors
 
-* **Application-Layer Leaks (WS B - L7 Web):**
+- **Application-Layer Leaks (WS B - L7 Web):**
   * *PII Exposure:* Cleartext form submissions containing structured records (e.g., credit card numbers validated via regex and Luhn checksum).
   * *Credentials & Secrets:* High-entropy strings (raw API tokens, private keys, Base64-encoded secrets) in HTTP request bodies, URIs, or JSON payloads.
   * *Encoding Evasion:* Standard payload transformations intended to bypass naive string matching.
 
-* **Network-Layer Covert Channels (WS C - L3/L4):**
+- **Network-Layer Covert Channels (WS C - L3/L4):**
   * *ICMP Tunneling:* Arbitrary data smuggled into ICMP Echo Request payloads, detectable via payload size anomalies, static padding patterns, or burst frequency.
   * *DNS Covert Channels:* Exfiltration via subdomain labels resolved against an attacker-controlled apex domain.
 
 #### 2. Out-of-Scope & Security Assumptions
 
-* **Gateway Platform Integrity:** The gateway host OS, Docker runtime, and detector process are trusted. Host escapes and kernel exploits are out of scope.
-* **TLS Trust Boundary:** Internal clients trust the gateway's root CA, allowing standard TLS termination and cleartext payload inspection at L7.
-* **Advanced Steganography:** Multimedia data hiding or other custom disguised encrypted protocols.
-* **Out-of-Band Channels:** Physical side-channels, cellular links, or any egress path bypassing our gateway topology.
+- **Gateway Platform Integrity:** The gateway host OS, Docker runtime, and detector process are trusted. Host escapes and kernel exploits are out of scope.
+- **TLS Trust Boundary:** Internal clients trust the gateway's root CA, allowing standard TLS termination and cleartext payload inspection at L7.
+- **Advanced Steganography:** Multimedia data hiding or other custom disguised encrypted protocols.
+- **Out-of-Band Channels:** Physical side-channels, cellular links, or any egress path bypassing our gateway topology.
 
 
-## Architecture & Topology
+## System Architecture & Detection Mechanisms
 
-The gateway operates a dual-homed server, bridging an isolated internal network (`172.20.0.0/24`) with an untrusted external network (`172.21.0.0/24`):
+### 1. Network Architecture & Interception Topology
+
+The DLP gateway is deployed as a dual-homed bridge separating the trusted enterprise subnet (`internal_net`, `172.20.0.0/24`) from the untrusted external network (`external_net`, `172.21.0.0/24`).
 
 ```text
-[ Victim: 172.20.0.3 ] ──(internal_net)──> [ Gateway: 172.20.0.2 / 172.21.0.2 ] ──(external_net)──> [ Attacker: 172.21.0.10 ]
-                                                ├── L7 Web: Transparent Proxy (mitmproxy :8080)
-                                                └── Covert: Passive Sniffer (covert-detector)
-
++-----------------------------------------------------------------------------------+
+| INTERNAL NETWORK: internal_net (172.20.0.0/24)                                    |
+|                                                                                   |
+|   +--------------------------+                                                    |
+|   |      Victim Host         |                                                    |
+|   |      (172.20.0.3)        |                                                    |
+|   | Default Route -> Gateway |                                                    |
+|   +------------+-------------+                                                    |
++----------------|------------------------------------------------------------------+
+                 |
+                 | Egress Traffic
+                 v
++-----------------------------------------------------------------------------------+
+| GATEWAY HOST (Shared Network Namespace)                                           |
+|                                                                                   |
+|   [ Inbound NIC: 172.20.0.2 ]                                                     |
+|          |                                                                        |
+|          +--- [ ICMP / UDP:53 ] -----------------------------------+              |
+|          |                                                         |              |
+|          |                                            +------------v------------+ |
+|          |                                            | Covert Sniffer (Scapy)  | |
+|          |                                            |  - DNS                  | |
+|          |                                            |  - ICMP                 | |
+|          |                                            +------------+------------+ |
+|          |                                                         |              |
+|          v                                                         v              |
+|   [ iptables PREROUTING ]                                  Log and/or Block       |
+|          |                                                                        |
+|          +---> TCP 80/443 --[ REDIRECT :8080 ]------> +-------------------------+ |
+|          |                                            |   mitmproxy (Inline)    | |
+|          |                                            |      Web DLP Addon      | |
+|          |                                            +------------+------------+ |
+|          |                                                         |              |
+|          | [ Other traffic ]                                       v              |
+|          v                                                 Log and/or Block       |
+|   [ iptables POSTROUTING: MASQUERADE ]                             |              |
+|          |                                                         |              |
+|          +----------------------------+----------------------------+              |
+|                                       |                                           |
+|   [ Outbound NIC: 172.21.0.2 ]        |                                           |
++---------------------------------------|-------------------------------------------+
+                                        |
++---------------------------------------|-------------------------------------------+
+| EXTERNAL NETWORK: external_net (172.21.0.0/24)                                    |
+|                                       |                                           |
+|                                       v                                           |
+|                        +------------------------------+                           |
+|                        |        Attacker Sinks        |                           |
+|                        |        (172.21.0.10)         |                           |
+|                        |  - HTTP Sink      (:80)      |                           |
+|                        |  - DNS Sink       (:53)      |                           |
+|                        |  - ICMP Echo Sink (Listener) |                           |
+|                        +------------------------------+                           |
++-----------------------------------------------------------------------------------+
 ```
 
-> For the comprehensive technical specification, see **[docs/architecture.md](docs/architecture.md)**.
+*(Full network scripts and container configurations are documented in `docs/architecture.md`).*
+
+### 2. Workstream B: Inline L7 Web DLP Engine
+
+`[PLACEHOLDER - Diogo & Jonas]`
+
+*(Detailed notes available in `docs/l7-web-detection-mechanism.md`).*
+
+### 3. Workstream C & D.1: Covert Channel Detection & Evasion Hardening
+
+#### 3.1 ICMP Covert Channel Detection (WS C)
+
+Standard operating systems generate predictable ICMP Echo Request packets. To detect data tunneling without introducing inline latency, `icmp_detector.py` evaluates captured frames using three passive checks:
+
+- **Structural Invariant Verification (`check_structure`):** Standard OS ping utilities use consistent payload layouts (Linux defaults to 56 bytes with an 8-byte kernel timestamp; Windows uses 32 fixed ASCII bytes). Packets deviating from these conventions trigger:
+  - `icmp_oversized_payload` (Severity: HIGH): Payloads exceeding the standard 64-byte limit (`MAX_STANDARD_PAYLOAD_SIZE`).
+  - `icmp_non_standard_size` (Severity: MEDIUM): Frame sizes deviating from standard 32- or 56-byte patterns.
+  - `icmp_abnormal_pattern` (Severity: MEDIUM): Standard-sized frames containing arbitrary exfiltrated bytes instead of expected OS byte sequences.
+- **Payload Content Scanning (`check_content`):** Payloads that pass structural checks are forwarded to the shared L7 engine (`detection.l7_web.scan_all`) to flag cleartext credentials or credit cards embedded in the data.
+- **Sliding-Window Frequency Tracking (`ICMPRateTracker`):** Tracks packet timestamps per source IP over a 1.0-second sliding window (`collections.deque`), raising `icmp_high_frequency` if request rates exceed 4 packets/second.
+
+*(Detailed heuristics and rules are documented in `docs/icmp-detection-mecanism.md`).*
+
+#### 3.2 ICMP Evasion Analysis & Hardening (WS D.1)
+
+`[PLACEHOLDER - Sofia]`
+
+
+#### 3.3 DNS Covert Tunnel Detection (WS C)
+
+`[PLACEHOLDER - Sofia]`
+
+
+*(Detailed design available in `docs/dns-detection-mechanism.md`).*
+
+#### 3.4 DNS Evasion Analysis & Hardening (WS D.1)
+
+Adversarial testing against the baseline DNS detector uncovered algorithmic flaws, short-string entropy limits, and architectural trade-offs.
+
+##### Evasion & Hardening Summary
+
+| # | Vector | Technique & Target Rule | Category | Status | Detection Rate (Baseline $\rightarrow$ Hardened) |
+| --- | --- | --- | --- | --- | --- |
+| **1** | **Entropy Dilution** | Padding subdomains with static characters to lower average entropy below 3.8 (`DNS_HIGH_ENTROPY`) | Algorithmic Flaw | **Patched** ([PR #4](https://github.com/AntoineQ1/DLPDetection/pull/4)) | $0\% \rightarrow 100\%$ |
+| **2** | **Multi-Label Slicing** | Slicing 20–45 char secrets across multiple short sub-labels (`DNS_LONG_QNAME`) | Algorithmic Flaw | **Patched** ([PR #6](https://github.com/AntoineQ1/DLPDetection/pull/6)) | $0\% \rightarrow 100\%$ |
+| **3** | **Micro-Chunking** | Splitting secrets into $<14$ char chunks to remain below theoretical entropy bounds | Mathematical Bound | *Documented Limitation* | $0\%$ (Theoretical $H_{\max} < 3.8$) |
+| **4** | **Multi-Query Splitting** | Splitting card numbers across sequential queries to evade regex and Luhn checks | Architectural Limit | *Documented Limitation* | $0\%$ (Stateless sniffing limit) |
+| **5** | **DNS over TCP/53** | Forcing TCP transport to bypass Scapy's UDP BPF filter | Architectural Limit | *Documented Limitation* | $0\%$ (BPF / stream reassembly limit) |
+| **6** | **Low-and-Slow Beaconing** | Sending 1 query every 10–15s to evade the 60-second sliding volume window | Operational Trade-off | *Documented Limitation* | $0\%$ (Sliding-window eviction) |
+
+##### Key Vulnerabilities & Applied Patches
+
+- **Entropy Dilution (Patched - PR #4):**
+  - *Bypass:* Computing Shannon entropy across the concatenated subdomain string allowed an attacker to pad a 16-character secret ($H \approx 4.0$) with repetitive characters (`aaa...`), pulling aggregate entropy down to $\sim 1.5$.
+  - *Hardening:* Added per-label maximum entropy checking. Individual labels with $\ge 16$ characters and $H \ge 3.8$ now trigger `DNS_HIGH_ENTROPY` regardless of surrounding padding.
+
+
+- **Label Fragmentation (Hardened Branch):**
+  - *Bypass:* Mapping binary data to dictionary words across multiple short labels (`winter.forest.silver.pocket.attacker.example`) kept individual labels $< 20$ characters, total length $< 50$ characters, and entropy low ($H \approx 3.1$).
+  - *Hardening:* Added a sub-label count threshold (`sub_label_count >= 4`), forcing payloads into fewer, longer labels that trip length rules.
+
+
+- **Fundamental Bounds & Trade-offs:**
+  - *Micro-chunking Ceiling:* Strings shorter than 14 characters mathematically cannot reach $3.8\text{ bits/char}$ ($\log_2 N < 3.8$). Lowering thresholds to catch them causes heavy false-positive rates on common hostnames (e.g., `auth-service`).
+  - *Stateless Fragmentation:* Splitting secrets across separate packets evades single-query inspection. Addressing this requires stateful stream reassembly or central logging on an enterprise recursive resolver (RPZ).
+  - *Low-and-Slow Beaconing:* Pacing queries at 10-second intervals evades 60-second sliding windows. Extending windows to several hours significantly increases memory usage and raises false positives from benign background DNS queries.
+
+
+*(Attack scripts, test queries, and validation outputs are documented in `docs/dns-evasion-hardening.md`).*
+
+### 4. Workstream D.2: Global Performance, Latency & Benchmark Evaluation
+
+`[PLACEHOLDER - Diogo, Jonas & Sofia]`
 
 
 ## Repository Structure
@@ -84,8 +208,8 @@ pyproject.toml         # Python environment managed by uv
 
 ### 1. Prerequisites
 
-* Docker & Docker Compose
-* [uv](https://docs.astral.sh/uv/) (recommended for local development and offline testing; see [docs/uv_guide.md](https://www.google.com/search?q=docs/uv_guide.md))
+- Docker & Docker Compose
+- [uv](https://docs.astral.sh/uv/) (recommended for local development and offline testing; see [docs/uv_guide.md](https://www.google.com/search?q=docs/uv_guide.md))
 
 
 ### 2. Launch the Lab
