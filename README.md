@@ -227,7 +227,7 @@ docker compose ps
 
 ## Verification & Demos
 
-> For complete walk-throughs and expected alert outputs, see the **[Live Demo Cheatsheet](https://www.google.com/search?q=docs/demo_guide.md)**.
+> For complete walk-throughs and expected alert outputs, see the **[Live Demo Cheatsheet](docs/demo_guide.md)**.
 
 ### 1. Web Layer DLP (Inline Blocking)
 
@@ -253,7 +253,7 @@ docker compose exec victim python attacks/icmp_exfiltrate.py --mode oversized
 
 ```
 
-*Details & heuristics:* [docs/icmp-detection-mecanism.md](https://www.google.com/search?q=docs/icmp-detection-mecanism.md)
+*Details & heuristics:* [docs/icmp-detection-mecanism.md](docs/icmp-detection-mecanism.md)
 
 *Inspect logs:* `docker compose logs -f covert-detector`
 
@@ -265,7 +265,7 @@ docker compose exec victim python attacks/dns_exfiltrate.py --secret "CONFIDENTI
 
 ```
 
-*Details & stealth levels (D1–D4):* [docs/dns-detection-mechanism.md](https://www.google.com/search?q=docs/dns-detection-mechanism.md)
+*Details & stealth levels (D1–D4):* [docs/dns-detection-mechanism.md](docs/dns-detection-mechanism.md)
 
 *Inspect logs:* `docker compose logs -f covert-detector`
 
