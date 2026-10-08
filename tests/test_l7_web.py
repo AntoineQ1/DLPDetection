@@ -158,13 +158,79 @@ def test_scan_ignores_milisecond_timestamp_but_luhn_isvalid():
 # === END CREDIT CARD SCAN TESTS ===
 
 
-# ===== REGEX TESTS =====
-def test_regex_rules_dummy_api_key_is_detected():  # remove later
-    findings = scan_all("the key is api-key")
-    assert any(f.rule_id == "AWS_VERY_REAL_API_KEY" for f in findings)
+# ===== REGEX RULES TESTS =====
+# Synthetically generated keys
+# Structurally valid but never issued.
+
+_AWS           = "AKIAZ2PNZZ746NIF8C84"
+_GH_TOKEN      = "ghp_tNXkSdQqG2obTnkFY2MRgQ9Yb7d9ssxncC1G"
+_GH_PAT_FG     = "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"
+_OPENAI_USER   = "sk-YWL5xnHWHbNU5l2BG3bzP3xCFOS83YV6gp5nwTmnH5cKEqHi"
+_OPENAI_PROJ   = "sk-proj-Sp4UeYnGAqewrPyittzXCPUWHwOc_p0X7Yt7qM2N8of7ji94ZI64r2wBXXWgkerKw9m8aOOXCuspnABdrzXRfCPrtUMJyET6RfIAppc95BJHU4Oz3LoTzyj5iaexYGlWCUDmoQWVcCi"
+_ANTHROPIC     = "sk-ant-Yj9aXPdYKe8br7YPJ37jbxJI7xtFk9JPU5VUjYv7U2sCgMwrKeF428qrY_kJay_QAHlHfPw0BOSZU01rl51A5FSqHrp5wOn"
+_GOOGLE_CLOUD  = "AIzaIERVTj-E4JQlb1fZ6DpIUXe1x4nrtNAzfqg"
+_GOOGLE_GEMINI = "AQ.AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWx"
+_JWT           = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.dlZ3eGZMcExOMFM2Z1g5QlRZazE2SERER3hwRENMMm4"
+_STRIPE        = "sk_live_UDG9kg4QWXdgFx5gWk8Pt1Lt"
+_CLOUDFLARE    = "cfut_NS3hyH3kfZuckpnHan6uJ4YuUoW1NvlLM5bXlvRwRHpwvBqK"
 
 
-# === END REGEX TESTS ===
+def test_regex_detects_aws_token():
+    findings = scan_all(f"token={_AWS}")
+    assert any(f.rule_id == "AWS Token" for f in findings)
+
+
+def test_regex_detects_github_token():
+    findings = scan_all(f"Authorization: token {_GH_TOKEN}")
+    assert any(f.rule_id == "GitHub Token" for f in findings)
+
+
+def test_regex_detects_github_pat_fine_grained():
+    findings = scan_all(f"Authorization: Bearer {_GH_PAT_FG}")
+    assert any(f.rule_id == "GitHub PAT" for f in findings)
+
+
+def test_regex_detects_openai_user_level_key():
+    findings = scan_all(f"OPENAI_API_KEY={_OPENAI_USER}")
+    assert any(f.rule_id == "OpenAI API Key (user-level)" for f in findings)
+
+
+def test_regex_detects_openai_project_key():
+    findings = scan_all(f"key={_OPENAI_PROJ}")
+    assert any(f.rule_id == "OpenAI API Key (scoped-keys)" for f in findings)
+
+
+def test_regex_detects_anthropic_key():
+    findings = scan_all(f"ANTHROPIC_API_KEY={_ANTHROPIC}")
+    assert any(f.rule_id == "Anthropic API Key" for f in findings)
+
+
+def test_regex_detects_google_cloud_api_key():
+    findings = scan_all(f"key={_GOOGLE_CLOUD}")
+    assert any(f.rule_id == "Google Cloud API Key" for f in findings)
+
+
+def test_regex_detects_google_gemini_key():
+    findings = scan_all(f"GEMINI_API_KEY={_GOOGLE_GEMINI}")
+    assert any(f.rule_id == "Google Gemini API Key" for f in findings)
+
+
+def test_regex_detects_jwt():
+    findings = scan_all(f"Authorization: Bearer {_JWT}")
+    assert any(f.rule_id == "JWT" for f in findings)
+
+
+def test_regex_detects_stripe_key():
+    findings = scan_all(f"stripe_key={_STRIPE}")
+    assert any(f.rule_id == "Stripe key" for f in findings)
+
+
+def test_regex_detects_cloudflare_token():
+    findings = scan_all(f"CF_API_TOKEN={_CLOUDFLARE}")
+    assert any(f.rule_id == "Cloudflare Account Token" for f in findings)
+
+
+# === END REGEX RULES TESTS ===
 
 
 # ===== DECODER TESTS =====
