@@ -345,3 +345,38 @@ Academic project. Do not deploy or execute against external networks without exp
 
 ### 4. Workstream C: DNS Covert Channel Detection
 - *[Placeholder: Add any specific sources or papers used by Sofia]*
+
+
+## Individual contributions
+
+### Individual contribution: Antoine
+
+#### 1. Network infrastructure & environment orchestration (WS A)
+
+- **Multi-host topology & network isolation:** Designed the containerized topology in `docker-compose.yml`, provisioning four dedicated nodes (`victim`, `gateway`, `covert-detector`, and `attacker`) across isolated internal (`172.20.0.0/24`) and external (`172.21.0.0/24`) subnets with custom Dockerfiles and static IP allocations.
+- **Host configuration & traffic interception:** Built custom container entrypoint scripts to manage host networking, including default client routing on the victim, `iptables` PREROUTING port redirection for HTTP/HTTPS to mitmproxy, and outbound MASQUERADE NAT on the gateway.
+- **TLS inspection & sniffer integration:** Automated local root CA generation and client trust-store setup to enable transparent HTTPS inspection via mitmproxy, while coupling the passive sniffer directly to the gateway network namespace.
+- **Environment & dependency management:** Standardized local development workflows and container builds across the team using Astral's `uv` package manager and lockfiles to guarantee reproducible environments.
+
+#### 2. ICMP covert channel detection & validation (WS C)
+
+- **Protocol & related use as a covert channel research :** Analyzed ICMP protocol mechanics and prior research (Sayadi et al., AICCSA 2017) to examine how echo requests can be exploited for covert data exfiltration and to establish baseline heuristics based on normal OS behavior.
+- **Detection pipeline (`icmp_detector.py`):** Built a passive inspection module combining:
+  - *Structural checks:* Profiled benign Linux (56-byte kernel timestamp) and Windows (32-byte sequence) defaults to flag oversized (> 64 B), unexpected lengths, or non-standard payloads.
+  - *Rate limiting:* Tracked per-source frequency using a sliding window to catch burst exfiltration.
+  - *L7 content reuse:* Reused the shared L7 scanner directly on raw ICMP payloads to detect cleartext credentials and credit cards inside ping data.
+- **Attack scripts & external sink:** Developed the attacker listener (`servers/icmp_sink.py`) and an exfiltration script (`attacks/icmp_exfiltrate.py`) covering primary attack scenarios (benign baseline, oversized frames, cleartext leaks, and rapid bursts) for reproducible testing and live demonstrations.
+
+#### 3. Adversarial DNS evasion research & hardening (WS D.1)
+
+- **Adversarial audit:** Audited Sofia’s passive DNS detector (`dns_detector.py`) against diverse evasion vectors, categorizing findings into patchable detection flaws, operational trade-offs, architectural boundaries, and fundamental mathematical limits.
+- **Hardening & implemented patches:**
+  - *Entropy dilution (PR #4):* Demonstrated that padding high-entropy secrets with repeating characters dropped the average entropy below threshold; patched `extract_features()` to track per-label maximum entropy, raising detection capabilities.
+  - *Multi-label slicing (PR #6):* Identified length-rule bypasses using multi-label splitting; implemented a patch introducing sub-label depth tracking (`sub_label_count >= 4`) to eliminate this attack vector.
+- **Documented bounds & limitations:** Documented detection limits that cannot be caught by single-packet heuristics: the Shannon entropy ceiling on short strings, multi-query payload splitting, transport bypasses (DNS over TCP/53), and low-and-slow queries evading sliding windows.
+
+#### 4. Documentation, integration & team coordination
+
+- **Report authoring:** Structured the primary `README.md` report, drafting the shared overarching sections (problem statement, threat model) as well as the chapters dedicated to my work (network architecture, ICMP covert detection, DNS evasion hardening as well as the section you are currently reading).
+- **Technical guides & demo setup:** Authored detailed standalone reference guides (`architecture.md`, `icmp-detection-mecanism.md`, and `dns-evasion-hardening.md`) and initiated `demo_guide.md` to provide a clear walk-through for testing and demo execution.
+- **Collaborative QA & governance:** Opened GitHub issues to flag detection blind spots and logic bugs in peer code, authored defensive PRs, and drafted the team's academic integrity policy (`AI_USE.md`).
