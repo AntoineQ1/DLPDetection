@@ -35,6 +35,7 @@ from scapy.layers.inet import IP
 from detection.common.types import Severity
 from detection.l7_web import scan_all
 from detection.l7_web.entropy import shannon_entropy
+from detection.l7_web.luhn import scan as scan_luhn
 
 if TYPE_CHECKING:
     from scapy.packet import Packet
@@ -130,6 +131,22 @@ def extract_features(qname: str) -> QnameFeatures:
     )
 
 
+def _numeric_label_runs(labels: list[str]) -> list[tuple[str, int]]:
+    """Join runs of consecutive all-digit labels. Returns (digits, label_count)
+    per run; a non-numeric label ends the current run."""
+    runs: list[tuple[str, int]] = []
+    cur: list[str] = []
+    for label in labels:
+        if label.isdigit():
+            cur.append(label)
+        elif cur:
+            runs.append(("".join(cur), len(cur)))
+            cur = []
+    if cur:
+        runs.append(("".join(cur), len(cur)))
+    return runs
+
+
 @dataclass
 class _FlowState:
     """Per (source_ip, apex) sliding-window state for the volume rule."""
@@ -202,8 +219,9 @@ class DnsTunnelDetector:
     def _check_content(
         self, src_ip: str, feats: QnameFeatures, qtype: str
     ) -> list[dict]:
-        # Scan each label on its own: joining labels would glue the chunk index
-        # (c0, c1, ...) onto the payload and break digit runs such as card numbers.
+        # Per-label scan: single-label content (cards, AWS keys, JWTs, entropy).
+        # Joining every label would glue the chunk index (c0, c1, ...) onto the
+        # payload and corrupt digit runs, so content is scored label-by-label.
         alerts: list[dict] = []
         for label in feats.sub_labels:
             for hit in scan_all(label, source="dns_qname"):
@@ -216,6 +234,27 @@ class DnsTunnelDetector:
                             "detector": hit.detector,
                             "source": hit.source,
                             "l7_rule_id": hit.rule_id,
+                            **hit.meta,
+                        },
+                    )
+                )
+
+        # Catch cards split across consecutive numeric labels
+        # (41111111.11111111); single labels are already covered above.
+        for digits, span in _numeric_label_runs(feats.sub_labels):
+            if span < 2:
+                continue
+            for hit in scan_luhn(digits):
+                alerts.append(
+                    self._alert(
+                        f"DNS_SENSITIVE_DATA_{hit.rule_id.upper()}", hit.severity,
+                        src_ip, feats, qtype,
+                        {
+                            "matched": hit.matched,
+                            "detector": hit.detector,
+                            "source": "dns_qname",
+                            "l7_rule_id": hit.rule_id,
+                            "split_labels": span,
                             **hit.meta,
                         },
                     )
