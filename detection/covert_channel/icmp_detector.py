@@ -19,6 +19,9 @@ LINUX_PING_PATTERN = bytes(range(16, 56))
 STANDARD_PAYLOAD_SIZES = {32, 56}
 MAX_STANDARD_PAYLOAD_SIZE = 64
 
+# Maximum acceptable timestamp delta for Linux ping timeval
+MAX_TIMESTAMP_DRIFT_SECONDS = 120.0
+
 # Default rate limits (standard ping is around 1 pkt/s)
 DEFAULT_WINDOW_SECONDS = 1.0
 DEFAULT_MAX_REQUESTS_PER_WINDOW = 4
@@ -120,11 +123,29 @@ def parse_icmp_echo(pkt: Packet) -> ICMPEchoMessage | None:
     )
 
 
+def is_valid_linux_timestamp(raw_header: bytes) -> bool:
+    """Validate that the first 16 bytes represent an authentic Linux struct timeval."""
+    if len(raw_header) != 16:
+        return False
+
+    tv_sec = int.from_bytes(raw_header[0:8], byteorder="little", signed=True)
+    tv_usec = int.from_bytes(raw_header[8:16], byteorder="little", signed=True)
+
+    if not (0 <= tv_usec < 1_000_000):
+        return False
+
+    return not abs(time.time() - tv_sec) > MAX_TIMESTAMP_DRIFT_SECONDS
+
+
 def is_known_benign_payload(payload: bytes) -> bool:
     """Check if payload matches standard Windows or Linux ping data."""
-    return payload == WINDOWS_PING_PAYLOAD or (
-        len(payload) == 56 and payload[16:] == LINUX_PING_PATTERN
-    )
+    if payload == WINDOWS_PING_PAYLOAD:
+        return True
+
+    if len(payload) == 56 and payload[16:] == LINUX_PING_PATTERN:
+        return is_valid_linux_timestamp(payload[:16])
+
+    return False
 
 
 def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
@@ -160,7 +181,7 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
             )
         ]
 
-    # 3. Standard size (32 or 56B), but altered content
+    # 3. Standard size (32 or 56B), but altered content or forged timeval header
     return [
         ICMPFinding(
             rule_id="icmp_abnormal_pattern",
@@ -172,30 +193,54 @@ def check_structure(msg: ICMPEchoMessage) -> list[ICMPFinding]:
 
 
 def check_content(msg: ICMPEchoMessage) -> list[ICMPFinding]:
-    """Scan payload text for sensitive data using the L7 engine."""
-    if not msg.payload:
-        return []
-
-    decoded_text = msg.payload.decode("utf-8", errors="ignore")
-    if not decoded_text.strip():
-        return []
-
+    """Scan payload text and header fields for sensitive data using the L7 engine."""
     findings: list[ICMPFinding] = []
-    for hit in scan_all(decoded_text, source="icmp_payload"):
-        findings.append(
-            ICMPFinding(
-                rule_id=f"icmp_sensitive_data_{hit.rule_id}",
-                severity=hit.severity,
-                description=f"Sensitive content detected in ICMP payload via rule '{hit.rule_id}'",
-                details={
-                    "matched": hit.matched,
-                    "detector": hit.detector,
-                    "source": hit.source,
-                    "l7_rule_id": hit.rule_id,
-                    **hit.meta,
-                },
-            )
-        )
+
+    # 1. Scan ICMP payload
+    if msg.payload:
+        decoded_text = msg.payload.decode("utf-8", errors="ignore")
+        if decoded_text.strip():
+            for hit in scan_all(decoded_text, source="icmp_payload"):
+                findings.append(
+                    ICMPFinding(
+                        rule_id=f"icmp_sensitive_data_{hit.rule_id}",
+                        severity=hit.severity,
+                        description=f"Sensitive content detected in ICMP payload via rule '{hit.rule_id}'",
+                        details={
+                            "matched": hit.matched,
+                            "detector": hit.detector,
+                            "source": hit.source,
+                            "l7_rule_id": hit.rule_id,
+                            **hit.meta,
+                        },
+                    )
+                )
+
+    # 2. Scan ICMP header fields
+    header_bytes = b""
+    if msg.icmp_id is not None:
+        header_bytes += msg.icmp_id.to_bytes(2, byteorder="big")
+    if msg.icmp_seq is not None:
+        header_bytes += msg.icmp_seq.to_bytes(2, byteorder="big")
+
+    if header_bytes:
+        decoded_header = header_bytes.decode("utf-8", errors="ignore")
+        if decoded_header.strip():
+            for hit in scan_all(decoded_header, source="icmp_header"):
+                findings.append(
+                    ICMPFinding(
+                        rule_id=f"icmp_sensitive_data_{hit.rule_id}",
+                        severity=hit.severity,
+                        description=f"Sensitive content detected in ICMP header via rule '{hit.rule_id}'",
+                        details={
+                            "matched": hit.matched,
+                            "detector": hit.detector,
+                            "source": hit.source,
+                            "l7_rule_id": hit.rule_id,
+                            **hit.meta,
+                        },
+                    )
+                )
 
     return findings
 
