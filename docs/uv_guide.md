@@ -30,12 +30,12 @@ This automatically sets up a local `.venv/` directory and installs all locked de
 
 With `uv`, **you do not need to manually activate the virtual environment**. You just need to prepend your commands with `uv run`:
 
-* **Run unit tests:**
+- **Run unit tests:**
 ```bash
 uv run pytest
 ```
 
-* **Run a script locally:**
+- **Run a script locally:**
 ```bash
 uv run python detection/l7_web/luhn.py
 ```
@@ -46,22 +46,22 @@ uv run python detection/l7_web/luhn.py
 
 Do **not** edit dependencies manually in text files. Let `uv` handle them:
 
-* **Add a package:**
+- **Add a package:**
 ```bash
 uv add my_python_package_for_dd2391
 ```
 
-* **Add a test/dev dependency:**
+- **Add a test/dev dependency:**
 ```bash
 uv add --dev my_python_package_for_dd2391
 ```
 
-* **Remove a package:**
+- **Remove a package:**
 ```bash
 uv remove my_python_package_for_dd2391
 ```
 
-* **Update a specific package:**
+- **Update a specific package:**
 ```bash
 uv lock --upgrade-package my_python_package_for_dd2391
 ```
@@ -69,5 +69,5 @@ Do **not** upgrade a package unless you are absolutely sure it won't break anyth
 
 ## 5. Git Conventions
 
-* **Always commit:** `pyproject.toml` and `uv.lock`.
-* **NEVER commit:** The `.venv/` folder (already excluded by the `.gitignore`).
+- **Always commit:** `pyproject.toml` and `uv.lock`.
+- **NEVER commit:** The `.venv/` folder (already excluded by the `.gitignore`).
