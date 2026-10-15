@@ -6,13 +6,13 @@ Evaluation of evasion vectors against the passive DNS covert channel detector (`
 
 ## Table of Contents
 
-* [Evasion & Hardening Matrix](#evasion--hardening-matrix)
-* [Section I: Algorithmic Vulnerabilities & Patches](#section-i-algorithmic-vulnerabilities--patches)
+- [Evasion & Hardening Matrix](#evasion--hardening-matrix)
+- [Section I: Algorithmic Vulnerabilities & Patches](#section-i-algorithmic-vulnerabilities--patches)
   * [Vector 1: Entropy Dilution (Subdomain Padding)](#vector-1-entropy-dilution-subdomain-padding)
   * [Vector 2: Multi-label Fragmentation (Label Slicing)](#vector-2-multi-label-fragmentation-label-slicing)
-* [Section II: Theoretical & Mathematical Bounds](#section-ii-theoretical--mathematical-bounds)
+- [Section II: Theoretical & Mathematical Bounds](#section-ii-theoretical--mathematical-bounds)
   * [Vector 3: Micro-chunking & Shannon Upper Bound](#vector-3-micro-chunking--shannon-upper-bound)
-* [Section III: Architectural Limits & Operational Trade-offs](#section-iii-architectural-limits--operational-trade-offs)
+- [Section III: Architectural Limits & Operational Trade-offs](#section-iii-architectural-limits--operational-trade-offs)
   * [Vector 4: Multi-Query Secret Splitting](#vector-4-multi-query-secret-splitting)
   * [Vector 5: Transport Layer Evasion (DNS over TCP/53)](#vector-5-transport-layer-evasion-dns-over-tcp53)
   * [Vector 6: Low-and-Slow Volumetric Beaconing](#vector-6-low-and-slow-volumetric-beaconing)
@@ -121,10 +121,10 @@ dlp-covert-detector  | ╰──────────────────
 
 This leaves a gap for payloads between 20 and 45 characters (tokens, short keys):
 
-* Sent as a single label (`winterforestsilverpocket.attacker.example`), it gets caught (`longest_label = 24 >= 20`).
-* Sliced into smaller labels (`winter.forest.silver.pocket.attacker.example`), each label (except the apex) is $\le 6$ characters and total length is 44 characters.
-* Dictionary-encoded or word-based data keeps entropy low ($H \approx 3.1\text{ bits/char} < 3.8$), bypassing the entropy check.
-* Transmitting the secret in a single request bypasses volume heuristics.
+- Sent as a single label (`winterforestsilverpocket.attacker.example`), it gets caught (`longest_label = 24 >= 20`).
+- Sliced into smaller labels (`winter.forest.silver.pocket.attacker.example`), each label (except the apex) is $\le 6$ characters and total length is 44 characters.
+- Dictionary-encoded or word-based data keeps entropy low ($H \approx 3.1\text{ bits/char} < 3.8$), bypassing the entropy check.
+- Transmitting the secret in a single request bypasses volume heuristics.
 
 Because standard English text averages roughly ~2.6 bits per character (see [source](https://cs.stanford.edu/people/eroberts/courses/soco/projects/1999-00/information-theory/entropy_of_english_9.html)), attackers can map binary data to wordlists (similar to BIP-39) to mimic legitimate hostnames while staying well under the 3.8 threshold.
 
@@ -141,9 +141,9 @@ if feats.longest_label >= LABEL_LEN_THRESHOLD or feats.total_len >= QNAME_LEN_TH
 
 Enforce an upper bound on sub-label nesting depth:
 
-* Added `SUB_LABEL_COUNT_THRESHOLD` (default: `4`, configurable via `DNS_SUB_LABEL_COUNT_THRESHOLD`).
-* Extracted `sub_label_count = len(sub_labels)` in `extract_features()`.
-* Added `sub_label_count >= SUB_LABEL_COUNT_THRESHOLD` as a trigger in `DNS_LONG_QNAME`.
+- Added `SUB_LABEL_COUNT_THRESHOLD` (default: `4`, configurable via `DNS_SUB_LABEL_COUNT_THRESHOLD`).
+- Extracted `sub_label_count = len(sub_labels)` in `extract_features()`.
+- Added `sub_label_count >= SUB_LABEL_COUNT_THRESHOLD` as a trigger in `DNS_LONG_QNAME`.
 
 Legitimate hostnames rarely nest $\ge 4$ sub-labels below their apex. Forcing payloads into fewer labels makes them easier to catch with `LABEL_LEN_THRESHOLD`.
 
@@ -215,9 +215,9 @@ Enforcing `ENTROPY_MIN_CHARS = 16` is a necessary constraint: calculating entrop
 
 Lowering the threshold (e.g. `DNS_ENTROPY_THRESHOLD = 3.0`, `ENTROPY_MIN_CHARS = 8`) causes frequent false positives on common hostnames:
 
-* `gateway-1` ($N=9$, $H = 2.95$)
-* `api-static` ($N=10$, $H = 3.12$)
-* `auth-service` ($N=12$, $H = 3.25$)
+- `gateway-1` ($N=9$, $H = 2.95$)
+- `api-static` ($N=10$, $H = 3.12$)
+- `auth-service` ($N=12$, $H = 3.25$)
 
 #### 4. Reproduction Steps
 
@@ -239,10 +239,10 @@ dlp-covert-detector  | [DEBUG-SNIFFER] Packet intercepted : 172.20.0.3 -> 172.21
 
 No alerts triggered:
 
-* `DNS_LONG_QNAME`: `longest_label = 12 < 20`, `total_len = 29 < 50`, `sub_label_count = 1 < 4`.
-* `DNS_HIGH_ENTROPY`: Skipped (`payload_len = 12 < 16`). Theoretical max ($3.585$) is below 3.8.
-* `DNS_TUNNEL_VOLUME`: 1 request ($1 < 8$).
-* `DNS_SENSITIVE_DATA_*`: No match on regex rules.
+- `DNS_LONG_QNAME`: `longest_label = 12 < 20`, `total_len = 29 < 50`, `sub_label_count = 1 < 4`.
+- `DNS_HIGH_ENTROPY`: Skipped (`payload_len = 12 < 16`). Theoretical max ($3.585$) is below 3.8.
+- `DNS_TUNNEL_VOLUME`: 1 request ($1 < 8$).
+- `DNS_SENSITIVE_DATA_*`: No match on regex rules.
 
 #### 6. Mitigations
 
@@ -281,10 +281,10 @@ def inspect(self, src_ip: str, dst_ip: str, qname: str, ...) -> list[dict]:
 
 Catching cross-packet fragmentation requires stateful stream reconstruction:
 
-* Tracking per-client state keyed by `(source_ip, apex)`.
-* Stripping custom chunk identifiers (`c0`, `c1`).
-* Handling packet reordering, packet loss, and timeouts over UDP.
-* Guarding state tables against memory exhaustion.
+- Tracking per-client state keyed by `(source_ip, apex)`.
+- Stripping custom chunk identifiers (`c0`, `c1`).
+- Handling packet reordering, packet loss, and timeouts over UDP.
+- Guarding state tables against memory exhaustion.
 
 This goes beyond the scope of a lightweight passive sniffer.
 
@@ -312,15 +312,15 @@ dlp-covert-detector  | [DEBUG-SNIFFER] Packet intercepted : 172.20.0.3 -> 172.21
 
 No alerts triggered:
 
-* `DNS_SENSITIVE_DATA_CC`: Both chunks are 8 digits ($< 13$ minimum).
-* `DNS_LONG_QNAME`: Both queries have `longest_label = 8 < 20`, `total_len = 28 < 50`, `sub_label_count = 2 < 4`.
-* `DNS_HIGH_ENTROPY`: Repetitive digits produce very low entropy.
-* `DNS_TUNNEL_VOLUME`: 2 queries ($< 8$ limit).
+- `DNS_SENSITIVE_DATA_CC`: Both chunks are 8 digits ($< 13$ minimum).
+- `DNS_LONG_QNAME`: Both queries have `longest_label = 8 < 20`, `total_len = 28 < 50`, `sub_label_count = 2 < 4`.
+- `DNS_HIGH_ENTROPY`: Repetitive digits produce very low entropy.
+- `DNS_TUNNEL_VOLUME`: 2 queries ($< 8$ limit).
 
 #### 5. Mitigations
 
-* **Recursive DNS Resolvers:** Forward all client DNS through a managed resolver (Unbound, BIND) with query logging and RPZ filtering.
-* **Sliding Digit Buffer:** Keep a short sliding buffer of numbers received per client IP (e.g. over 10 seconds) and run the Luhn check on the concatenated string.
+- **Recursive DNS Resolvers:** Forward all client DNS through a managed resolver (Unbound, BIND) with query logging and RPZ filtering.
+- **Sliding Digit Buffer:** Keep a short sliding buffer of numbers received per client IP (e.g. over 10 seconds) and run the Luhn check on the concatenated string.
 
 ### Vector 5: Transport Layer Evasion (DNS over TCP/53)
 
@@ -391,8 +391,8 @@ The sniffer logs remain completely empty (0 packets captured).
 
 #### 5. Mitigations
 
-* **Egress Firewall Rules:** Block direct outbound UDP/53 and TCP/53 from workload subnets, forcing traffic through internal recursive resolvers.
-* **Full DPI Engine:** Use an engine with native TCP reassembly (Suricata, Zeek) if inspecting raw traffic taps.
+- **Egress Firewall Rules:** Block direct outbound UDP/53 and TCP/53 from workload subnets, forcing traffic through internal recursive resolvers.
+- **Full DPI Engine:** Use an engine with native TCP reassembly (Suricata, Zeek) if inspecting raw traffic taps.
 
 ### Vector 6: Low-and-Slow Volumetric Beaconing
 
@@ -478,6 +478,6 @@ At no point does the rolling 60-second window hold more than 6 queries.
 
 Short-window packet sniffers cannot catch low-and-slow channels without high false-positive rates. Practical long-term solutions include:
 
-* **Log Analytics (SIEM):** Aggregate DNS logs over multi-hour or multi-day windows.
-* **Periodicity Detection:** Analyze query interval patterns using autocorrelation to detect automated beaconing even with slight jitter.
-* **Domain Reputation:** Correlate lookups with Newly Observed Domain (NOD) feeds to flag traffic toward recently registered apex domains.
+- **Log Analytics (SIEM):** Aggregate DNS logs over multi-hour or multi-day windows.
+- **Periodicity Detection:** Analyze query interval patterns using autocorrelation to detect automated beaconing even with slight jitter.
+- **Domain Reputation:** Correlate lookups with Newly Observed Domain (NOD) feeds to flag traffic toward recently registered apex domains.

