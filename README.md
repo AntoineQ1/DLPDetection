@@ -182,7 +182,40 @@ Adversarial testing against the baseline DNS detector uncovered algorithmic flaw
 
 ### 4. Workstream D.2: Global Performance, Latency & Benchmark Evaluation
 
+#### 4.1 Quantitative Benchmarking & Performance Metrics
 `[PLACEHOLDER - Diogo, Jonas & Sofia]`
+
+#### 4.2 Qualitative Analysis: Limits, Architectural Trade-offs & Defense-in-Depth
+
+#### 1. Architectural Trade-offs & Intrinsic Prototype Limits
+
+Our gateway uses a hybrid architecture combining an inline L7 proxy (`mitmproxy`), which detects (and is able to block) unauthorized HTTP/HTTPS requests, and a passive L3/L4 sniffer (using `Scapy`), which inspects ICMP and DNS channels.
+
+This split between **request-scoped L7 stream inspection** and **packet-by-packet L3/L4 detection** reflects a deliberate trade-off between detection depth, implementation complexity, and performance:
+- **Why synchronous inline inspection fits L7:** HTTP traffic naturally operates in discrete, complete requests. This makes it straightforward for mitmproxy to hold an outbound request, unpack its payload, and run inspection rules before deciding whether to forward it or block it. Because web clients already tolerate small processing delays, this synchronous check provides real-time prevention with minimal noticeable impact.
+- **Why lightweight passive sniffing fits L3/L4:** On connectionless protocols like UDP and ICMP, inspecting packets individually keeps memory usage flat and introduces zero forwarding latency. While stateful stream reassembly is technically feasible (as demonstrated by enterprise DPI and NIDS engines), implementing robust session tracking, chunk reassembly, and similar advanced mechanisms in a lightweight Python sniffer would substantially increase complexity and memory consumption, making it out of scope for this academic project.
+
+Consequently, our adversarial evaluation highlighted three fundamental categories of detection boundaries across the gateway:
+- **Mathematical Bounds:** Information-theoretic heuristics like Shannon entropy require a minimum sample length to be statistically meaningful. When attackers split data into micro-chunks, the theoretical maximum entropy of short strings stays below detection thresholds, and lowering those thresholds becomes unviable due to high false-positive rates on normal traffic.
+- **Architectural Limits:** Because both our passive L3/L4 sniffer and our request-scoped L7 proxy evaluate transmissions in isolation, they are blind to secrets split across multiple consecutive packets or HTTP requests (evading multi-character regex and Luhn checks). Likewise, protocol-specific capture filters (such as sniffing only UDP port 53) can be bypassed by shifting to alternative transports like DNS over TCP or encrypted channels (DoH/DoT).
+- **Operational Trade-offs:** Rate and volume detectors rely on short in-memory sliding windows to bound memory usage ($1\text{s}$ for ICMP, $60\text{s}$ for DNS). Attackers can evade these thresholds through *low-and-slow* pacing so earlier entries expire before triggering an alert, whereas extending windows to several hours would increase both memory overhead and false alarms on legitimate background traffic.
+
+##### 2. Attacker/Defender Asymmetry & Evolution of DLP Controls
+
+These limitations illustrate a core asymmetry in network security: while an attacker only needs to find a single blind spot *(an unhandled encoding, an alternate transport protocol, or a slow transmission rate)* to exfiltrate data, the defender must account for *all possible vectors* without disrupting legitimate traffic.
+
+Given the time constraints of an academic project, we focused on a representative subset of payload-based exfiltration across HTTP, ICMP Echo (Type 8), and DNS subdomains. In a production environment, DLP capabilities can be extended along two complementary axes:
+- **Hardening the Network Gateway:** Moving from passive alerting to active blocking on L3/L4 channels, adopting a dedicated DPI engine for stateful TCP stream reassembly, and inspecting packet timing patterns to detect low-and-slow exfiltration or timing channels
+- **Broadening the DLP Spectrum:** Data loss prevention extends beyond network packet inspection. Depending on organizational needs, controls range from simple deterministic policies *(such as blocking outbound emails or attachments to external domains)* to Endpoint DLP agents running directly on workstations *(preventing users from copying and pasting sensitive text or writing to removable USB media)*, up to behavioral and AI-assisted anomaly detection.
+
+##### 3. Risk-Driven Security & Defense-in-Depth
+
+Security architecture decisions ultimately depend on **threat modeling** and **risk tolerance**. An environment handling highly classified assets may require strict physical and electromagnetic isolation (*air-gapping*), making a network DLP gateway unnecessary. Conversely, when an organization requires external connectivity to operate, deploying a dedicated DLP layer meaningfully reduces exposure to both accidental leaks and adversarial exfiltration.
+
+Even then, a network DLP gateway is not an all-in-one silver bullet; it acts as a perimeter safety net within a broader **Defense-in-Depth** strategy alongside foundational security controls:
+- **Identity & Access Management (IAM) & Least Privilege:** Restricting access to sensitive databases, API keys, and confidential documents to authorized users and services directly reduces the amount of data exposed to accidental leaks or host compromise.
+- **Egress Firewalling & Managed DNS Architecture:** Pairing the gateway with strict firewall rules that block direct outbound traffic on port 53, forcing internal hosts through an enterprise recursive DNS resolver equipped with query logging and *Response Policy Zones (RPZ)*.
+- **Centralized SIEM Correlation & Threat Intelligence:** Forwarding standardized `[DLP-ALERT]` events and resolver logs to a SIEM enables aggregation over extended time horizons and cross-referencing against external **Threat Intelligence** feeds *(such as Newly Observed Domains or reputation blocklists)* to catch stealthy threats, such as slow exfiltration, that slip past short real-time windows.
 
 ## Repository Structure
 
