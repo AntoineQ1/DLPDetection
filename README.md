@@ -116,9 +116,18 @@ The DLP gateway is deployed as a dual-homed bridge separating the *trusted enter
 
 ### 2. Workstream B: Inline L7 Web DLP Engine
 
-`[PLACEHOLDER - Diogo & Jonas]`
+The L7 engine runs inside mitmproxy and checks every outbound HTTP(S) request before it is forwarded. Each request goes through three stages: collect scannable text, scan it, and decide whether to forward or block.
 
-*(Detailed notes available in `docs/l7-web-detection-mechanism.md`).*
+- **Stage 1 — Input collection:** The addon scans the URL path, every query parameter, sensitive headers (`Cookie`, `Authorization`), and the request body. Bodies go through `decode_body` which handles `application/x-www-form-urlencoded` (percent-escapes decoded, so `card=4111%2D1111...` becomes a flat PAN), `application/json` (recursed through to flatten scalar values out of nested objects), or any other type as plain UTF-8. Malformed input falls back to UTF-8 instead of crashing. Invisible characters (zero-width space etc.) are stripped before scanning so attackers cannot hide separators inside digit runs.
+
+- **Stage 2 — Multi-detector scan (`scan_all`):** Each collected string goes through three detectors that share a common `Finding` output:
+  - `regex_rules`: Patterns for well-known credentials: AWS keys, GitHub tokens, OpenAI / Anthropic / Google API keys, JWTs, Stripe keys, Cloudflare tokens. Patterns are reused from gitleaks, GitHub Secret Scanning, and trufflehog.
+  - `luhn`: Credit-card detection in three steps. A regex finds 12–19 digit runs with optional spaces, dots, dashes or underscores. Each candidate is checked against the Luhn checksum. Luhn-valid numbers are then matched to around 36 real issuers (Visa, Mastercard, Amex, Maestro, JCB, UnionPay, ...) by BIN prefix and length, which drops numbers that are Luhn-valid but not actual cards.
+  - `entropy`: Shannon entropy per character over whitespace-separated tokens. Tokens above the threshold are flagged. The `shannon_entropy` function is also used by the DNS detector.
+
+- **Stage 3 — Alert and block:** On any finding the addon logs a `[DLP-ALERT]` through the shared logger. Matched substrings pass through `detection.common.mask.mask()` so a card number appears as `4111********1111` in the log, not as cleartext. The addon then sets `flow.response` to a 403, which stops mitmproxy from forwarding. The victim sees the 403, the attacker sink sees nothing.
+
+*(Full design and WS-D.1 evasion cases are in `docs/l7-web-detection-mechanism.md`.)*
 
 ### 3. Workstream C & D.1: Covert Channel Detection & Evasion Hardening
 
