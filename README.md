@@ -55,62 +55,7 @@ We evaluate traffic originating from an internal client (`172.20.0.3`), covering
 
 The DLP gateway is deployed as a dual-homed bridge separating the *trusted enterprise subnet* (`internal_net`, `172.20.0.0/24`) from the *untrusted external network* (`external_net`, `172.21.0.0/24`).
 
-```text
-+-----------------------------------------------------------------------------------+
-| INTERNAL NETWORK: internal_net (172.20.0.0/24)                                    |
-|                                                                                   |
-|   +--------------------------+                                                    |
-|   |      Victim Host         |                                                    |
-|   |      (172.20.0.3)        |                                                    |
-|   | Default Route -> Gateway |                                                    |
-|   +------------+-------------+                                                    |
-+----------------|------------------------------------------------------------------+
-                 |
-                 | Egress Traffic
-                 v
-+-----------------------------------------------------------------------------------+
-| GATEWAY HOST (Shared Network Namespace)                                           |
-|                                                                                   |
-|   [ Inbound NIC: 172.20.0.2 ]                                                     |
-|          |                                                                        |
-|          +--- [ ICMP / UDP:53 ] -----------------------------------+              |
-|          |                                                         |              |
-|          |                                            +------------v------------+ |
-|          |                                            | Covert Sniffer (Scapy)  | |
-|          |                                            |  - DNS                  | |
-|          |                                            |  - ICMP                 | |
-|          |                                            +------------+------------+ |
-|          |                                                         |              |
-|          v                                                         v              |
-|   [ iptables PREROUTING ]                                 Log and/or Block        |
-|          |                                                                        |
-|          +---> TCP 80/443 --[ REDIRECT :8080 ]------> +-------------------------+ |
-|          |                                            |        mitmproxy        | |
-|          |                                            |      Web DLP Addon      | |
-|          |                                            +------------+------------+ |
-|          |                                                         |              |
-|          | [ Other traffic ]                                       v              |
-|          v                                                Log and/or Block        |
-|   [ iptables POSTROUTING: MASQUERADE ]                             |              |
-|          |                                                         |              |
-|          +----------------------------+----------------------------+              |
-|                                       |                                           |
-|   [ Outbound NIC: 172.21.0.2 ]        |                                           |
-+---------------------------------------|-------------------------------------------+
-                                        |
-+---------------------------------------|-------------------------------------------+
-| EXTERNAL NETWORK: external_net (172.21.0.0/24)                                    |
-|                                       |                                           |
-|                                       v                                           |
-|                        +------------------------------+                           |
-|                        |        Attacker Sinks        |                           |
-|                        |        (172.21.0.10)         |                           |
-|                        |  - HTTP Sink      (:80)      |                           |
-|                        |  - DNS Sink       (:53)      |                           |
-|                        |  - ICMP Echo Sink (Listener) |                           |
-|                        +------------------------------+                           |
-+-----------------------------------------------------------------------------------+
-```
+![Architecture diagram](docs/visuals/architecture.png)
 
 *(Full network scripts and container configurations are documented in `docs/architecture.md`).*
 
@@ -292,7 +237,7 @@ docker compose exec victim ping -c 2 172.21.0.10
 docker compose exec victim python attacks/icmp_exfiltrate.py --mode oversized
 ```
 
-*Details & heuristics:* [docs/icmp-detection-mecanism.md](docs/icmp-detection-mecanism.md)
+*Details:* [docs/icmp-detection-mecanism.md](docs/icmp-detection-mecanism.md)
 
 *Inspect logs:* `docker compose logs -f covert-detector`
 
@@ -338,7 +283,7 @@ Both the inline proxy and passive sniffers output standardized JSON records pref
 
 ## Documentation Index
 
-*The following files are not considered to be part of the report, but this list aims at explaining the role of each file.*
+*The following files are NOT considered to be part of the report, but this list aims at explaining the role of each file.*
 
 - **[docs/architecture.md](docs/architecture.md)**: Full network topology, container orchestration, routing, and interception design.
 - **[docs/demo_guide.md](docs/demo_guide.md)**: End-to-end evaluation cheat sheet and demo steps.
