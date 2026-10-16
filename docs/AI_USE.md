@@ -42,7 +42,8 @@ Additionally, generative AI may have been occasionally prompted to produce ASCII
 ## 4. Topic Exploration
 
 - **Source exploration:**
-> "Can you summarize this research paper / article about [topic] ? Explain how it can be relevant in light of a DLP Detection cybersecurity project."
+> "I am working on a DLP Detection cybersecurity project. Can you summarize this research paper / article about [topic] ?"
+> "Find research papers on [topic]. Justify your selection and make sure each paper is relevant."
 
 ## 5. Deterministic (Non-Generative) Tooling
 

