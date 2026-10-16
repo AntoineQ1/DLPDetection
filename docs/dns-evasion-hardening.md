@@ -21,14 +21,14 @@ Evaluation of evasion vectors against the passive DNS covert channel detector (`
 
 ## Evasion & Hardening Matrix
 
-| # | Evasion Vector | Targeted Rule | Category | Status & Reference | Detection Rate (Baseline $\rightarrow$ Hardened) |
-|---|---|---|---|---|---|
-| **1** | **Entropy Dilution (Subdomain Padding)** | `DNS_HIGH_ENTROPY` | Algorithmic Hardening | **Patched** ([PR #4](https://github.com/AntoineQ1/DLPDetection/pull/4)) | $0\% \rightarrow 100\%$ |
-| **2** | **Multi-label Fragmentation (Label Slicing)** | `DNS_LONG_QNAME` | Algorithmic Hardening | *Candidate Patch* | $0\% \rightarrow 100\%$ |
-| **3** | **Micro-chunking ($< 16$ chars)** | `DNS_HIGH_ENTROPY` | Mathematical Bound | *Documented Limitation* | $0\%$ (Theoretical $H_{\max}$ ceiling) |
-| **4** | **Multi-Query Secret Splitting** | `DNS_SENSITIVE_DATA_*` | Architectural Limit | *Documented Limitation* | $0\%$ (Cross-packet fragmentation) |
-| **5** | **Transport Evasion (DNS/TCP)** | Global BPF Filter | Architectural Limit | *Documented Limitation* | $0\%$ (L4 transport mismatch) |
-| **6** | **Low-and-Slow Beaconing** | `DNS_TUNNEL_VOLUME` | Operational Trade-off | *Documented Limitation* | $0\%$ (Sliding window eviction) |
+| # | Vector | Technique & Target Rule | Category | Status |
+| --- | --- | --- | --- | --- |
+| **1** | **Entropy Dilution** | Padding subdomains with static characters to lower average entropy below 3.8 (`DNS_HIGH_ENTROPY`) | Algorithmic Flaw | **Patched** ([PR #4](https://github.com/AntoineQ1/DLPDetection/pull/4)) |
+| **2** | **Multi-Label Slicing** | Slicing 20–45 char secrets across multiple short sub-labels (`DNS_LONG_QNAME`) | Algorithmic Flaw | **Patched** ([PR #6](https://github.com/AntoineQ1/DLPDetection/pull/6)) |
+| **3** | **Micro-Chunking** | Splitting secrets into $<14$ char chunks to remain below theoretical entropy bounds | Mathematical Bound | *Documented Limitation* |
+| **4** | **Multi-Query Splitting** | Splitting card numbers across sequential queries to evade regex and Luhn checks | Architectural Limit | *Documented Limitation* |
+| **5** | **DNS over TCP/53** | Forcing TCP transport to bypass Scapy's UDP BPF filter | Architectural Limit | *Documented Limitation* |
+| **6** | **Low-and-Slow Beaconing** | Sending 1 query every 10–15s to evade the 60-second sliding volume window | Operational Trade-off | *Documented Limitation* |
 
 
 
@@ -38,9 +38,9 @@ Evaluation of evasion vectors against the passive DNS covert channel detector (`
 
 #### 1. Threat Model & Evasion Mechanism
 
-Encrypted or encoded data (Base32, Hex, Base64) typically has high Shannon entropy ($H \approx 4.0\text{--}5.0\text{ bits/char}$). The `DNS_HIGH_ENTROPY` rule flags queries where the payload reaches or exceeds `DNS_ENTROPY_THRESHOLD` (default: `3.8`).
+Encrypted or encoded data (Base32, Hex, Base64) typically has high Shannon entropy ($H \approx 4.0\text{-}$ bits/char). The `DNS_HIGH_ENTROPY` rule flags queries where the payload reaches or exceeds `DNS_ENTROPY_THRESHOLD` (default: `3.8`).
 
-An attacker can bypass this threshold by **padding** the subdomain with predictable or repeating characters (e.g., 32 `a` characters). This pulls the average entropy across the full query below $3.8$.
+An attacker can bypass this threshold by **padding** the subdomain with predictable or repeating characters (e.g., 32 `a` characters). This pulls the average entropy across the full query below 3.8.
 
 #### 2. Root Cause Analysis
 
@@ -117,13 +117,13 @@ dlp-covert-detector  | ╰──────────────────
 
 #### 1. Threat Model & Evasion Mechanism
 
-`DNS_LONG_QNAME` originally checked whether a single label reached $\ge 20\text{ chars}$ or the total FQDN reached $\ge 50\text{ chars}$.
+`DNS_LONG_QNAME` originally checked whether a single label reached $\ge 20$ chars or the total FQDN reached $\ge 50$ chars.
 
 This leaves a gap for payloads between 20 and 45 characters (tokens, short keys):
 
 - Sent as a single label (`winterforestsilverpocket.attacker.example`), it gets caught (`longest_label = 24 >= 20`).
 - Sliced into smaller labels (`winter.forest.silver.pocket.attacker.example`), each label (except the apex) is $\le 6$ characters and total length is 44 characters.
-- Dictionary-encoded or word-based data keeps entropy low ($H \approx 3.1\text{ bits/char} < 3.8$), bypassing the entropy check.
+- Dictionary-encoded or word-based data keeps entropy low ($H \approx 3.1 \text{ bits/char} < 3.8$), bypassing the entropy check.
 - Transmitting the secret in a single request bypasses volume heuristics.
 
 Because standard English text averages roughly ~2.6 bits per character (see [source](https://cs.stanford.edu/people/eroberts/courses/soco/projects/1999-00/information-theory/entropy_of_english_9.html)), attackers can map binary data to wordlists (similar to BIP-39) to mimic legitimate hostnames while staying well under the 3.8 threshold.
@@ -202,8 +202,8 @@ An attacker can split encoded or encrypted data into small chunks of 8 to 12 cha
 
 Detection fails because:
 
-1. `dns_detector.py` skips entropy calculation for strings shorter than `ENTROPY_MIN_CHARS` ($16$).
-2. A 12-character string has a mathematical upper bound that prevents it from reaching $3.8\text{ bits/char}$.
+1. `dns_detector.py` skips entropy calculation for strings shorter than `ENTROPY_MIN_CHARS` (16).
+2. A 12-character string has a mathematical upper bound that prevents it from reaching 3.8 bits/char.
 
 #### 2. Mathematical Limit on Short Strings
 
@@ -240,7 +240,7 @@ dlp-covert-detector  | [DEBUG-SNIFFER] Packet intercepted : 172.20.0.3 -> 172.21
 No alerts triggered:
 
 - `DNS_LONG_QNAME`: `longest_label = 12 < 20`, `total_len = 29 < 50`, `sub_label_count = 1 < 4`.
-- `DNS_HIGH_ENTROPY`: Skipped (`payload_len = 12 < 16`). Theoretical max ($3.585$) is below 3.8.
+- `DNS_HIGH_ENTROPY`: Skipped (`payload_len = 12 < 16`). Theoretical max (3.585) is below 3.8.
 - `DNS_TUNNEL_VOLUME`: 1 request ($1 < 8$).
 - `DNS_SENSITIVE_DATA_*`: No match on regex rules.
 
@@ -453,7 +453,7 @@ done
 
 ##### Fast Burst Control
 
-Sent in rapid succession ($< 5\text{s}$), `DNS_TUNNEL_VOLUME` triggers on the 8th query:
+Sent in rapid succession ($< 5$s), `DNS_TUNNEL_VOLUME` triggers on the 8th query:
 
 ```text
 dlp-covert-detector  | ╭─ ⚠  HIGH DNS_TUNNEL_VOLUME  ALLOWED  ───────────────────────────────────────╮

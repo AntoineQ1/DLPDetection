@@ -84,4 +84,4 @@ To validate each detection heuristic against real traffic, we developed a dedica
 - **Sensitive Cleartext Leak (`--mode sensitive`):** Transmits financial identifiers (credit card numbers) inside the payload to verify integration with the shared L7 DLP rules (`icmp_sensitive_data_*`).
 - **High-Frequency Burst (`--mode burst`):** Emits rapid bursts (6 packets with a 50 ms interval) using benign padding to validate the sliding-window rate tracker (`icmp_high_frequency`).
 
-> **Note:** For the step-by-step reproduction instructions, for the exact commands, and finally the expected JSON alert outputs, don't hesitate to refer to the **Live Demo Cheatsheet** (`demo_guide.md`, cf. Section 2).
+> **Note:** See `demo_guide.md` (Section 2) for reproduction commands and expected alert outputs.
