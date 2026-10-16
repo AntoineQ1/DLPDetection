@@ -397,3 +397,27 @@ Academic project. Do not deploy or execute against external networks without exp
 - **Report authoring:** Structured the primary `README.md` report, drafting the shared overarching sections *(problem statement, threat model)* as well as the chapters dedicated to my work *(network architecture, ICMP covert detection, DNS evasion hardening, qualitative limits analysis, bounds, and architectural alternatives ; as well as the section you are currently reading)*.
 - **Technical guides & demo setup:** Authored detailed standalone reference guides *(`architecture.md`, `icmp-detection-mecanism.md`, and `dns-evasion-hardening.md`)* and initiated `demo_guide.md` to provide a clear walk-through for testing and demo execution.
 - **Collaborative QA & governance:** Opened GitHub issues to flag detection blind spots and logic bugs in peer code, authored PRs for patches, and drafted the team's academic AI Use policy (`AI_USE.md`).
+
+### Individual contribution: Jonas
+
+#### 1. L7 Web DLP engine: Credit-card detection (WS B)
+
+- **Luhn checksum implementation:** Wrote the Luhn validator (`luhn_valid` in `detection/l7_web/luhn.py`) following the Wikipedia specification: reverse digits, double at odd indices, subtract 9 above threshold, sum modulo 10.
+- **Regex pre-filter design:** Designed the digit-run candidate regex `(?<!\d)(?:\d[ ._-]?){11,18}\d(?!\d)` with negative lookarounds to prevent matches inside longer digit sequences *(tracking numbers, hashes, opaque IDs)*, reducing false positives upstream of Diogo's issuer-prefix stage.
+- **Finding emission with offset preservation:** Wired both stages into a `scan()` function returning `Finding` objects with offset-correct `start`/`end` positions, so downstream components can hide or highlight the exact matched substring.
+
+#### 2. L7 Web DLP engine: HTTP payload decoding (WS B)
+
+- **Content-type dispatch (`decode_body`):** Built the body decoder in `detection/l7_web/decoder.py` routing raw request bytes by `Content-Type`: `application/x-www-form-urlencoded` through `parse_qs` to decode percent-escapes *(critical: `%2D` → `-` before Luhn runs)*, `application/json` through `json.loads`, everything else through a UTF-8 fallback.
+- **Recursive scalar extraction (`_flatten_scalars`):** Implemented the recursive walker that descends arbitrarily nested JSON structures and returns every scalar as a flat list, surfacing values like `{"user":{"payment":{"cc":"4111-1111-1111-1111"}}}` regardless of nesting depth.
+- **Mitmproxy addon integration:** Wired `decode_body` into the gateway addon so every outbound request is decoded before `scan_all()` runs. Closing a detection gap where URL-encoded form payloads previously bypassed the Luhn pre-filter because `mitmproxy.get_text()` does not URL-decode form bodies.
+
+#### 3. Shared L7 pipeline infrastructure & log hygiene (WS B)
+
+- **Core `Finding` contract & `scan_all` aggregator:** Defined the shared `Finding` dataclass and `scan_all` dispatch function in `detection/l7_web/__init__.py`, giving all three L7 detectors and the covert-channel sniffer a uniform output shape.
+- **Secret masking (`detection/common/mask.py`):** Caught that `log_alert` was writing full matched substrings into the alert channel (a self-inflicted leak) and added a shared `mask()` helper (first and last 4 chars kept, middle replaced with asterisks) wired through the addon's alert path.
+
+#### 4. Documentation & test suite
+
+- **L7 detection documentation (`docs/l7-web-detection-mechanism.md`):** Authored the standalone technical reference covering the three-stage credit-card pipeline *(regex / Luhn / issuer prefix)*, the body decoder's dispatch and fallback behavior, the entropy infrastructure, and the alerting path through mitmproxy.
+- **Initial unit test suite (`tests/test_l7_web.py`) & repository bootstrap:** Wrote the initial pytest suite covering Luhn edge cases, scan integration *(mixed separators, offset correctness, multiple cards)*, decoder behaviour *(nested JSON, URL-encoded multi-values, broken bodies)*, and false-positive protection (the harness Diogo later extended for the issuer-prefix and regex-pattern cases). Also set up the initial package layout *(`detection/`, `attacks/`, `evaluation/`, `tests/`)* before team-wide implementation began.
