@@ -23,3 +23,6 @@
 ### ICMP Covert Channels
 
 - [Sirine Sayadi, Tarek Abbes, Adel Bouhoula. Detection of Covert Channels Over ICMP Protocol. 2017 IEEE/ACS 14th International Conference on Computer Systems and Applications (AICCSA), Oct 2017, Hammamet, Tunisia. pp.1247-1252, ⟨10.1109/AICCSA.2017.60⟩. ⟨hal-02381398⟩](https://hal.science/hal-02381398/document )
+
+### DNS Covert Channels
+
