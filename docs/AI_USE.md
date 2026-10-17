@@ -11,12 +11,13 @@ Generative AI was strictly restricted to secondary tasks:
 - **Background Reading & Source Exploration:** Summarizing technical papers and contextualizing research material related to network DLP.
 - **Unit Tests:** Generating unit tests under `tests/`. 
 - **Terminal UI & Cosmetic Formatting:** Generating presentation helpers and terminal styling tools under `ui/` using the `rich` library (progress bars, status panels, alert cards, etc.).
+- **Artifact reuse for evaluation:** Asisting to reproduce and configure external tools to perform evaluation of the DNS/ICMP protocols.
 
 ## 2. Code Generation & Attribution
 
 In line with the course policy on third-party code:
 
-- **Separation:** All AI-assisted code is strictly isolated in dedicated directories: `tests/` for automated test suites and `ui/` for terminal presentation tools.
+- **Separation:** All AI-assisted code is strictly isolated in dedicated directories: `tests/` for automated test suites, `ui/` for terminal presentation tools, and evaluation/*/generate_*_sessions.py files which reuses existing dns exfiltration queries.
 
 ### Representative Prompts
 
@@ -25,6 +26,9 @@ In line with the course policy on third-party code:
 
 - **Terminal UI / Presentation tools:**
 > "I have a DLP gateway and an ICMP attack script with existing business logic. Create an isolated helper module in `ui/display.py` using the `rich` library to format status lines, hex payload previews, and alert cards. Do not handle any networking or detection logic in this module; provide only high-level visual rendering functions that accept standard Python data types."
+
+- **Tool Reproduction:**
+> "I want to use [tool x] to evaluate our icmp detector functionality. First do a reproduction script to asses to what extent we can utilize it and its compatibility to be integrated in our existing workflow."
 
 ## 3. Report Language Polishing & Diagram Generation
 
