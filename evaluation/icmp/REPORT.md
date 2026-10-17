@@ -1,22 +1,14 @@
 # ICMP detector evaluation
 
-Malicious traffic: packets built by the documented [`icmp.py` covert-channel tool](https://github.com/Smendowski/hidden-communication-using-covert-channels/blob/main/icmp.py) by Smendowski et al., using 100 distinct seeded dummy files and source IPs, one transfer per session. Tool SHA-256: `6a1afd034959323e24164f1cb717a8746854776d1da9f28cdddf31420895eb90`. Benign traffic: 100 locally generated Linux/Windows/default and custom diagnostic Echo sessions, with three requests per session.
+Malicious traffic comes from two real tools, sampled with a fixed seed. [DhavalKapil/icmptunnel](https://github.com/DhavalKapil/icmptunnel) `send_icmp_packet`, source commit `267a9ec7af03bf05f467d94550f15a969bfb8611`: 50 raw transfers drawn by stratified random sampling across oversized / tiny / burst / cleartext-secret profiles (random sizes, packet counts, send cadence, and dummy tokens). Input PCAP SHA-256: `cc1ab06a4ff270ac78ae982dcd9b7cbd44886d23b6794b71f73719612a55ea47`. [Smendowski et al.'s covert-channel tool](https://github.com/Smendowski/hidden-communication-using-covert-channels), vendored as `external_icmp.py` (`vendored-sha256:6a1afd034959323e24164f1cb717a8746854776d1da9f28cdddf31420895eb90`): 50 base64 transfers with random file sizes. Input PCAP SHA-256: `48b09ef168ba04fadf79b5fab7e2b380c33a0dee963a20c708023c400cad6ab6`. Each transfer has a distinct input and source IP. Benign traffic: 100 locally generated Linux/Windows/default and random custom-size Echo sessions, with a random number of requests per session.
 
 ## Tool relevance and research connection
 
-The selected project code fragments a file, base64-encodes its chunks, adds
-sequence and file-identification fields, and builds ICMP Echo Requests. This
-directly tests the detector's handling of payload-bearing ICMP diagnostics.
-Its documented packet builder permits distinct, reproducible offline transfer
-sessions. The source is a project repository with implementation notes; we
-found no peer-reviewed publication directly tied to this exact tool.
+The detector inspects ICMP payloads three ways -- structure (size / pattern), rate (per-source frequency), and content (regex, Luhn, Shannon entropy) -- so the evaluation uses **two** real tools, driven across several input profiles, to reach every path. [DhavalKapil/icmptunnel](https://github.com/DhavalKapil/icmptunnel) frames raw IPv4/UDP data inside ICMP Echo Requests; fed different inputs and cadences it produces oversized payloads (`icmp_oversized_payload`), tiny payloads (`icmp_non_standard_size`), sub-second bursts (`icmp_high_frequency`), and cleartext dummy secrets that its raw framing leaves readable (`luhn_cc` and the API-token regexes). [Smendowski et al.'s covert-channel tool](https://github.com/Smendowski/hidden-communication-using-covert-channels) **base64-encodes** each file chunk, placing a high-entropy ASCII token in the payload -- the `icmp_sensitive_data_high_entropy` signal raw binary never forms, because the content scan's UTF-8 decode drops non-ASCII bytes.
 
-[Tu et al., *Computers, Materials & Continua* 71(2) (2022), 2315–2331](https://doi.org/10.32604/cmc.2022.022540)
-study ICMP covert tunnels and generate samples with icmptunnel, ptunnel, and
-icmpsh. The paper establishes the relevance of malicious ICMP payload traffic
-as a detection target, but does not evaluate Smendowski et al.'s implementation
-or validate this detector's scores. Testing those additional, paper-used tools
-would broaden the evidence beyond the current single-tool result.
+The [ICMPTend paper](https://doi.org/10.32604/cmc.2022.022540) describes an ICMP covert-tunnel **detector**, not an attack generator, and names icmptunnel, ptunnel, and icmpsh among its sample sources; it does not publish the exact repository, version, or capture, so this is not a replication of its dataset or detector. The base64-over-ICMP technique is itself documented by purpose-built data-exfiltration test tools such as [PyExfil](https://github.com/ytisf/PyExfil) (whose ICMP module base64-encodes files for DLP testing) and [SensePost's DET](https://github.com/sensepost/DET); these are cited as evidence that the technique is real, not run here (PyExfil's ICMP module is Python 2 / impacket and not offline-runnable unmodified).
+
+Both bundled PCAPs were built offline by the tools' own packet builders with no socket opened: icmptunnel's C `send_icmp_packet` with `sendto` intercepted, and Smendowski's scapy `create_icmp_payload` whose packets are written straight to a PCAP. Distinct seeded dummy files were used per transfer. No live tunnel, packet transmission, or receiving endpoint was exercised.
 
 ## Method
 
@@ -30,20 +22,28 @@ Offline packet replay through the production packet parser and detector function
 | Malicious sessions | 100 |
 | Detected malicious sessions | 100 |
 | Missed malicious sessions | 0 |
-| Flagged benign sessions | 30 |
-| Unflagged benign sessions | 70 |
-| Benign session alert rate | 30.0% |
+| Flagged benign sessions | 27 |
+| Unflagged benign sessions | 73 |
+| Benign session alert rate | 27.0% |
 | Malicious session detection rate | 100.0% |
 
 ### By session scenario
 
 | Scenario | TP | FN | FP | TN |
 | --- | ---: | ---: | ---: | ---: |
-| custom_120_byte_ping | 0 | 0 | 10 | 0 |
-| custom_32_byte_ping | 0 | 0 | 20 | 0 |
-| external_icmp_file_transfer | 100 | 0 | 0 | 0 |
-| linux_default_ping | 0 | 0 | 0 | 40 |
-| windows_default_ping | 0 | 0 | 0 | 30 |
+| custom_100_byte_ping | 0 | 0 | 7 | 0 |
+| custom_120_byte_ping | 0 | 0 | 6 | 0 |
+| custom_32_byte_ping | 0 | 0 | 3 | 0 |
+| custom_48_byte_ping | 0 | 0 | 1 | 0 |
+| custom_56_byte_ping | 0 | 0 | 7 | 0 |
+| custom_64_byte_ping | 0 | 0 | 3 | 0 |
+| icmptunnel_burst | 10 | 0 | 0 | 0 |
+| icmptunnel_oversized | 20 | 0 | 0 | 0 |
+| icmptunnel_secret | 10 | 0 | 0 | 0 |
+| icmptunnel_tiny | 10 | 0 | 0 | 0 |
+| linux_default_ping | 0 | 0 | 0 | 38 |
+| smendowski_base64_exfil | 50 | 0 | 0 | 0 |
+| windows_default_ping | 0 | 0 | 0 | 35 |
 
 ## Packet-level diagnostics
 
@@ -51,42 +51,57 @@ A packet without an alert is not a missed session when another packet in the sam
 
 | Metric | Count / value |
 | --- | ---: |
-| Benign samples | 300 |
-| Malicious samples | 180 |
-| True positives | 180 |
+| Benign samples | 315 |
+| Malicious samples | 200 |
+| True positives | 200 |
 | False negatives | 0 |
-| False positives | 90 |
-| True negatives | 210 |
-| Benign packet alert rate | 30.0% |
+| False positives | 85 |
+| True negatives | 230 |
+| Benign packet alert rate | 27.0% |
 | Malicious packet alert rate | 100.0% |
 
 ### By scenario
 
 | Scenario | TP | FN | FP | TN |
 | --- | ---: | ---: | ---: | ---: |
-| custom_120_byte_ping | 0 | 0 | 30 | 0 |
-| custom_32_byte_ping | 0 | 0 | 60 | 0 |
-| external_icmp_file_transfer | 180 | 0 | 0 | 0 |
-| linux_default_ping | 0 | 0 | 0 | 120 |
-| windows_default_ping | 0 | 0 | 0 | 90 |
+| custom_100_byte_ping | 0 | 0 | 21 | 0 |
+| custom_120_byte_ping | 0 | 0 | 18 | 0 |
+| custom_32_byte_ping | 0 | 0 | 7 | 0 |
+| custom_48_byte_ping | 0 | 0 | 2 | 0 |
+| custom_56_byte_ping | 0 | 0 | 24 | 0 |
+| custom_64_byte_ping | 0 | 0 | 13 | 0 |
+| icmptunnel_burst | 73 | 0 | 0 | 0 |
+| icmptunnel_oversized | 57 | 0 | 0 | 0 |
+| icmptunnel_secret | 10 | 0 | 0 | 0 |
+| icmptunnel_tiny | 10 | 0 | 0 | 0 |
+| linux_default_ping | 0 | 0 | 0 | 128 |
+| smendowski_base64_exfil | 50 | 0 | 0 | 0 |
+| windows_default_ping | 0 | 0 | 0 | 102 |
 
 ### Rules fired
 
 | Rule | Findings |
 | --- | ---: |
-| icmp_oversized_payload | 210 |
-| icmp_sensitive_data_high_entropy | 180 |
-| icmp_abnormal_pattern | 60 |
+| icmp_oversized_payload | 229 |
+| icmp_sensitive_data_high_entropy | 57 |
+| icmp_high_frequency | 33 |
+| icmp_abnormal_pattern | 31 |
+| icmp_non_standard_size | 25 |
+| icmp_sensitive_data_luhn_cc | 10 |
+| icmp_sensitive_data_Stripe key | 3 |
+| icmp_sensitive_data_AWS Token | 3 |
+| icmp_sensitive_data_Google Cloud API Key | 2 |
+| icmp_sensitive_data_GitHub Token | 2 |
 
 ## Review packet examples
 
 ### Flagged benign packets
 
-- `icmp-0022` (custom_32_byte_ping): `icmp_abnormal_pattern`
-- `icmp-0023` (custom_32_byte_ping): `icmp_abnormal_pattern`
-- `icmp-0024` (custom_32_byte_ping): `icmp_abnormal_pattern`
-- `icmp-0025` (custom_32_byte_ping): `icmp_abnormal_pattern`
-- `icmp-0026` (custom_32_byte_ping): `icmp_abnormal_pattern`
+- `icmp-0011` (custom_100_byte_ping): `icmp_oversized_payload`
+- `icmp-0012` (custom_100_byte_ping): `icmp_oversized_payload`
+- `icmp-0013` (custom_100_byte_ping): `icmp_oversized_payload`
+- `icmp-0014` (custom_100_byte_ping): `icmp_oversized_payload`
+- `icmp-0015` (custom_100_byte_ping): `icmp_oversized_payload`
 
 ### Malicious packets without an alert
 
@@ -94,12 +109,13 @@ A packet without an alert is not a missed session when another packet in the sam
 
 ## Interpretation
 
-The external tool produced 100 distinct dummy-file transfers, each with its own source and file content. Its packet payloads exceed the 64-byte structure threshold, so `icmp_oversized_payload` catches these transfers. This establishes detection for this tool's packet construction, not for all ICMP tunnels.
+The two tools produced 100 distinct offline transfer sessions (stratified random sampling: each run drawn from a profile, with sizes, packet counts, send cadence, and secret tokens sampled from fixed seeded distributions). Every malicious session is detected, and together the profiles exercise all three detection paths. Structure: icmptunnel's raw payloads trip `icmp_oversized_payload`, its tiny payloads trip `icmp_non_standard_size`. Rate: its burst profile exceeds the per-second threshold and trips `icmp_high_frequency`. Content: Smendowski's base64 payloads trip `icmp_sensitive_data_high_entropy` (a high-entropy ASCII token raw binary never forms), and icmptunnel's cleartext-secret profile trips `luhn_cc` and the API-token regexes. This establishes detection across the structure, rate, and content paths, not detection of all ICMP tunnels.
 
-The 30 false-positive sessions are legitimate custom Echo payloads: 20 at 32 bytes trigger `icmp_abnormal_pattern` and ten at 120 bytes trigger `icmp_oversized_payload`. Default Linux and Windows ping examples produce no alerts. The benign traffic is synthetic, so the alert rates apply only to this scenario mix.
+The 27 false-positive sessions are legitimate custom Echo payloads: standard-size (32/56 B) pings with altered content trip `icmp_abnormal_pattern`, non-standard sizes (48/64 B) trip `icmp_non_standard_size`, and larger diagnostics (100/120 B) trip `icmp_oversized_payload` -- see the benign rows of the session scenario table. Default Linux and Windows pings produce no alerts. The benign traffic is synthetic, so the alert rates apply only to this scenario mix.
 
-The current local ICMP test suite also has a failing case, `test_whitelisted_linux_ping_prefix_is_still_inspected`: a 56-byte payload with an encoded card in the first 16 bytes and the Linux tail produces no alert. This is a separate false-negative vector from the external tool's default large-packet output.
+The current local ICMP test suite also has a failing case, `test_whitelisted_linux_ping_prefix_is_still_inspected`: a 56-byte payload with an encoded card in the first 16 bytes and the Linux tail produces no alert. This is a separate false-negative vector from the large-packet output of either tool.
 
 ## Limits
 
 The replay calls the production parser and detector on packets, but does not exercise live sniffing, dropped packets, routing, gateway logs, or blocking. The benign traffic is synthetic and the malicious traffic comes from one tool per protocol; broader traffic sources and more tools are needed before estimating field precision or recall.
+
