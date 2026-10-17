@@ -9,6 +9,7 @@ THIS FILE IS AI GENERATED.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -43,14 +44,17 @@ MOCK_ALTERNATE_HOST_IP: str = "172.20.0.4"
 def _build_linux_payload() -> bytes:
     """Synthesizes a standardized 56-byte Linux ping payload buffer.
 
-    Prepends a 16-byte zeroed timestamp emulation header (`timeval` struct)
-    to the canonical Linux ASCII pattern sequence.
+    Prepends a timestamp to emulate authentic Linux ping behavior, followed by the canonical byte pattern.
 
     Returns:
         bytes: Raw byte buffer emulating authentic Linux ping payloads.
     """
-    synthetic_timestamp_header_bytes: bytes = b"\x00" * 16
-    return synthetic_timestamp_header_bytes + LINUX_PING_PATTERN
+    now = time.time()
+    tv_sec = int(now)
+    tv_usec = int((now - tv_sec) * 1_000_000)
+    tv_sec_bytes = tv_sec.to_bytes(8, byteorder="little", signed=True)
+    tv_usec_bytes = tv_usec.to_bytes(8, byteorder="little", signed=True)
+    return tv_sec_bytes + tv_usec_bytes + LINUX_PING_PATTERN
 
 
 # =====================================================================
@@ -210,6 +214,31 @@ def test_structure_evasion_chunking_with_forged_pattern() -> None:
     assert len(detected_structural_findings) == 1
     assert detected_structural_findings[0].rule_id == "icmp_abnormal_pattern"
     assert detected_structural_findings[0].severity == Severity.MEDIUM
+
+
+def test_whitelisted_linux_ping_prefix_is_still_inspected() -> None:
+    """Verifies that high-entropy data smuggled into the Linux timeval prefix is detected."""
+    smuggled = bytes.fromhex(
+        "9f3ae10771785a2bccddeeff01020304"
+    )
+    payload = smuggled + LINUX_PING_PATTERN
+    pkt = (
+        IP(src=MOCK_SOURCE_HOST_IP, dst=MOCK_DESTINATION_HOST_IP)
+        / ICMP(type=ICMP_ECHO_REQUEST)
+        / Raw(load=payload)
+    )
+    parsed = parse_icmp_echo(pkt)
+    assert parsed is not None
+
+    findings = analyze_icmp_message(parsed)
+    assert findings != [], "encoded data in the whitelisted prefix produced no alert"
+    assert any(f.rule_id == "icmp_abnormal_pattern" for f in findings)
+
+
+def test_benign_linux_ping_rejects_zeroed_or_stale_timestamp() -> None:
+    """Ensures that zeroed timestamps or absurd drifts are flagged as abnormal."""
+    zeroed_header = b"\x00" * 16
+    assert is_known_benign_payload(zeroed_header + LINUX_PING_PATTERN) is False
 
 
 # =====================================================================

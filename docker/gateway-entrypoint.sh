@@ -25,7 +25,7 @@ fi
 # Enable addon if available
 ADDON_OPT=""
 if [ -f /app/detection/l7_web/addon.py ]; then
-    echo "[gateway] Chargement de l'addon L7 Web..."
+    echo "[gateway] Loading the L7 Web addon..."
     ADDON_OPT="-s /app/detection/l7_web/addon.py"
 fi
 

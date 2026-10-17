@@ -48,8 +48,8 @@ git rebase main
 git push --force-with-lease origin evaluation/dns-entropy-hardening
 ```
 
-> **History Divergence Warning:**
-> Never run `git pull` on a rebased branch. It may very well cause duplicate merge commits. Always update the remote using `git push --force-with-lease`.
+> **History Divergence:**
+> To avoid duplicate merge commits, please never run `git pull` on a rebased branch. Instead : always update the remote using `git push --force-with-lease`.
 
 ## 3. Patched Validation (Hardened Branch)
 

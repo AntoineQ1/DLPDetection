@@ -12,11 +12,11 @@ The detection strategy implemented here is partially inspired by research from S
 
 ## 2. Threat Model
 
-* **Attacker Profile:** An insider threat or a compromised host located on the internal lab network (`172.20.0.0/24`) trying to exfiltrate confidential records (such as payment card data or API secrets) toward an external endpoint (`172.21.0.10`).
-* **Evasion Strategy:** 
+- **Attacker Profile:** An insider threat or a compromised host located on the internal lab network (`172.20.0.0/24`) trying to exfiltrate confidential records (such as payment card data or API secrets) toward an external endpoint (`172.21.0.10`).
+- **Evasion Strategy:** 
   * The attacker avoids standard Web/HTTP channels to bypass L7 gateway proxy controls.
   * The attacker injects data into raw ICMP Echo Request frames, either by sending large chunks (bulk exfiltration), splitting data into small custom packets, or flooding packets in rapid bursts to minimize dwell time.
-* **Monitoring Posture:** All traffic originating from the victim host is routed through our central gateway, which acts as the perimeter barrier. While the gateway actively intercepts and proxies L7 web flows, it also hosts the covert detection engine listening on the inbound interface (`172.20.0.0/24`). This allows it to passively inspect ICMP frames on the fly and log alerts immediately as packets traverse the gateway, without introducing processing delays into standard network traffic.
+- **Monitoring Posture:** All traffic originating from the victim host is routed through our central gateway, which acts as the perimeter barrier. While the gateway actively intercepts and proxies L7 web flows, it also hosts the covert detection engine listening on the inbound interface (`172.20.0.0/24`). This allows it to passively inspect ICMP frames on the fly and log alerts immediately as packets traverse the gateway, without introducing processing delays into standard network traffic.
 
 ## 3. Detection Architecture
 
@@ -52,8 +52,8 @@ Every captured packet is parsed by `parse_icmp_echo()`. If the packet is an ICMP
 
 ### 3.1 Structural Inspection (`check_structure`)
 Standard operating systems build predictable payloads:
-* **Windows:** Exactly 32 bytes of ASCII padding (`abcdefghijklmnopqrstuvwabcdefghi`).
-* **Linux:** Exactly 56 bytes total (an 8-byte kernel timestamp followed by fixed bytes `range(16, 56)`).
+- **Windows:** Exactly 32 bytes of ASCII padding (`abcdefghijklmnopqrstuvwabcdefghi`).
+- **Linux:** Exactly 56 bytes total (an 8-byte kernel timestamp followed by fixed bytes `range(16, 56)`).
 
 To avoid unnecessary alerts, any packet matching these exact byte layouts is immediately flagged as clean via `is_known_benign_payload()`. For everything else, the engine applies three structural rules:
 
@@ -70,8 +70,8 @@ The payload is evaluated against the existing rules and algorithms (such as the 
 Human diagnostic usage rarely exceeds 1 packet per second under standard tool defaults. Attackers moving data over ICMP often increase transmission rates to maximize throughput.
 
 We track packet timestamps per source IP using a sliding time window (`collections.deque`):
-* **Window:** `1.0` second (`DEFAULT_WINDOW_SECONDS`).
-* **Threshold:** `4` requests per window (`DEFAULT_MAX_REQUESTS_PER_WINDOW`).
+- **Window:** `1.0` second (`DEFAULT_WINDOW_SECONDS`).
+- **Threshold:** `4` requests per window (`DEFAULT_MAX_REQUESTS_PER_WINDOW`).
 
 If an internal IP dispatches more than 4 Echo Requests within a single 1-second interval, the engine generates an `icmp_high_frequency` alert with the current packet count and window metrics.
 
@@ -79,9 +79,9 @@ If an internal IP dispatches more than 4 Echo Requests within a single 1-second 
 
 To validate each detection heuristic against real traffic, we developed a dedicated test harness (`attacks/icmp_exfiltrate.py`). It covers four key test scenarios:
 
-* **Benign Baseline:** Standard system ping generating 56-byte Linux packets to verify the absence of false positives.
-* **Oversized Bulk Exfiltration (`--mode oversized`):** Sends single frames exceeding the standard 64-byte threshold to validate the structural detection engine (`icmp_oversized_payload`).
-* **Sensitive Cleartext Leak (`--mode sensitive`):** Transmits financial identifiers (credit card numbers) inside the payload to verify integration with the shared L7 DLP rules (`icmp_sensitive_data_*`).
-* **High-Frequency Burst (`--mode burst`):** Emits rapid bursts (6 packets with a 50 ms interval) using benign padding to validate the sliding-window rate tracker (`icmp_high_frequency`).
+- **Benign Baseline:** Standard system ping generating 56-byte Linux packets to verify the absence of false positives.
+- **Oversized Bulk Exfiltration (`--mode oversized`):** Sends single frames exceeding the standard 64-byte threshold to validate the structural detection engine (`icmp_oversized_payload`).
+- **Sensitive Cleartext Leak (`--mode sensitive`):** Transmits financial identifiers (credit card numbers) inside the payload to verify integration with the shared L7 DLP rules (`icmp_sensitive_data_*`).
+- **High-Frequency Burst (`--mode burst`):** Emits rapid bursts (6 packets with a 50 ms interval) using benign padding to validate the sliding-window rate tracker (`icmp_high_frequency`).
 
-> **Note:** For the step-by-step reproduction instructions, for the exact commands, and finally the expected JSON alert outputs, don't hesitate to refer to the **Live Demo Cheatsheet** (`demo_guide.md`, cf. Section 2).
+> **Note:** See `demo_guide.md` (Section 2) for reproduction commands and expected alert outputs.
