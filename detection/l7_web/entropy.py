@@ -36,7 +36,7 @@ def shannon_entropy(text: str) -> float:
 # log_2(62) ~= 5.95
 #  2.14 < entropy of normal english text < 4.76
 # So a good threshold is 4.70
-# It will detect some false positives but that is beter than letting a possible normal entropy token pass
+# It will detect some false positives but that is beter than letting a possible normal entropy secret pass
 def scan(text: str) -> list[Finding]:
     hits: list[Finding] = []
     for m in _TOKEN_RE.finditer(text):

@@ -63,12 +63,12 @@ The DLP gateway is deployed as a dual-homed bridge separating the *trusted enter
 
 The L7 engine runs inside mitmproxy and checks every outbound HTTP(S) request before it is forwarded. Each request goes through three stages: collect scannable text, scan it, and decide whether to forward or block.
 
-- **Stage 1 — Input collection:** The addon scans the URL path, every query parameter, sensitive headers (`Cookie`, `Authorization`), and the request body. Bodies go through `decode_body` which handles `application/x-www-form-urlencoded` (percent-escapes decoded, so `card=4111%2D1111...` becomes a flat PAN), `application/json` (recursed through to flatten scalar values out of nested objects), or any other type as plain UTF-8. Malformed input falls back to UTF-8 instead of crashing. Invisible characters (zero-width space etc.) are stripped before scanning so attackers cannot hide separators inside digit runs.
+- **Stage 1 — Input collection:** The addon scans the URL path, every query parameter, all request headers (including `Cookie`, `Authorization`, and any custom headers) and the request body. Bodies go through `decode_body` which handles `application/x-www-form-urlencoded` (percent-escapes decoded, so `card=4111%2D1111...` becomes a flat PAN), `application/json` (recursed through to flatten scalar values out of nested objects), or any other type as plain UTF-8. Malformed input falls back to UTF-8 instead of crashing. Invisible characters (zero-width space etc.) are stripped before scanning so attackers cannot hide separators inside digit runs.
 
 - **Stage 2 — Multi-detector scan (`scan_all`):** Each collected string goes through three detectors that share a common `Finding` output:
-  - `regex_rules`: Patterns for well-known credentials: AWS keys, GitHub tokens, OpenAI / Anthropic / Google API keys, JWTs, Stripe keys, Cloudflare tokens. Patterns are reused from gitleaks, GitHub Secret Scanning, and trufflehog.
-  - `luhn`: Credit-card detection in three steps. A regex finds 12–19 digit runs with optional spaces, dots, dashes or underscores. Each candidate is checked against the Luhn checksum. Luhn-valid numbers are then matched to around 36 real issuers (Visa, Mastercard, Amex, Maestro, JCB, UnionPay, ...) by BIN prefix and length, which drops numbers that are Luhn-valid but not actual cards.
-  - `entropy`: Shannon entropy per character over whitespace-separated tokens. Tokens above the threshold are flagged. The `shannon_entropy` function is also used by the DNS detector.
+  - `regex_rules`: Patterns for well-known credentials: AWS keys, GitHub tokens, OpenAI / Anthropic / Google API keys, JWTs, Stripe keys, Cloudflare tokens. Patterns were derived from official documentation and other blogs and forum discussions about them (mentioned in `RESOURCES.md`).
+  - `luhn`: Credit-card detection in three steps. A regex finds 12–19 digit runs with optional spaces, dots, dashes or underscores. Each candidate is checked against the Luhn checksum. Luhn-valid numbers are then matched to real issuers (Visa, Mastercard, Amex, Maestro, JCB, UnionPay, ...) by BIN prefix and length, which drops numbers that are Luhn-valid but not actual cards.
+  - `entropy`: Shannon entropy per character over whitespace-separated tokens. Tokens above the threshold are flagged. The threshold for L7 is set to 4.7 bits, since natural english is usually between 2.14 and 4.76. This way it will detect some false positives in L7 but that was considered better than letting a "normal" entropy secret pass. The `shannon_entropy` function is also used by the DNS detector. DNS detector has a different threshold. 
 
 - **Stage 3 — Alert and block:** On any finding the addon logs a `[DLP-ALERT]` through the shared logger. Matched substrings pass through `detection.common.mask.mask()` so a card number appears as `4111********1111` in the log, not as cleartext. The addon then sets `flow.response` to a 403, which stops mitmproxy from forwarding. The victim sees the 403, the attacker sink sees nothing.
 
@@ -416,3 +416,28 @@ Academic project. Do not deploy or execute against external networks without exp
 
 - **L7 detection documentation (`docs/l7-web-detection-mechanism.md`):** Authored the standalone technical reference covering the three-stage credit-card pipeline *(regex / Luhn / issuer prefix)*, the body decoder's dispatch and fallback behavior, the entropy infrastructure, and the alerting path through mitmproxy.
 - **Initial unit test suite (`tests/test_l7_web.py`) & repository bootstrap:** Wrote the initial pytest suite covering Luhn edge cases, scan integration *(mixed separators, offset correctness, multiple cards)*, decoder behaviour *(nested JSON, URL-encoded multi-values, broken bodies)*, and false-positive protection (the harness Diogo later extended for the issuer-prefix and regex-pattern cases). Also set up the initial package layout *(`detection/`, `attacks/`, `evaluation/`, `tests/`)* before team-wide implementation began.
+
+### Individual contribution: Diogo
+
+#### 1. L7 Web DLP engine: Credit-card detection hardening (WS B)
+
+- **Issuer prefix & length validation (`detection/l7_web/luhn.py`):**  
+Extended Jonas Luhn validation by checking if each candidate mathed real credit card issuers (from a Wikipedia list). By checking BIN prefix ranges and card number lengths, we were able to reduce false positives that could came, for example, from timestamps that otherwise will be luhn valid. Each issuer also carries a `include_detection` flag that could be used for testing and/or statistics. 
+- **Separator & length regex fix (`detection/l7_web/luhn.py`):**
+Added more separators to the candidate regex and fixed its length to cover, for example, Maestro cards (that are shorter than usual cards)
+- **Test coverage (`tests/test_l7_web.py`)**
+Added tests such as: test_luhn_empty(), test_luhn_receives_char(), test_scan_ignores_all_zeros_but_luhn_isvalid(), test_scan_ignores_milisecond_timestamp_but_luhn_isvalid(), test_scan_finds_cc_with_dots(), test_scan_finds_cc_with_underscores(), and others, to guarantee the credit-card detection hardening was well implemented and too proof the changes were relevant.
+
+#### 2. L7 Web DLP engine: Detection pipeline wiring (WS B)
+- **Addon.py
+[Diogo TODO: COMPLETE]
+
+#### 3. L7 Web DLP engine: API key regex rules (WS B)
+- **credential patterns (`detection/l7_web/regex_rules.py`):**
+Implemented regex patterns for famous companies such as Amazon (AWS), GitHub, OpenAI, Google Cloud API and Gemini, Stripe, Cloudflare. JWTs were also considered relevant. This patterns were not reused from any licensed detection projects, they were derived from documentation and public format specifications, blogs and other websites mentioned in ...
+- **Regex test suite (`tests/test_l7_web.py`):**
+Added tests for each regex rule using synthetically generated, structurally valid but never-issued token.
+
+[Diogo TODO: COMPLETE]
+
+### Individual contribution: Sofía
