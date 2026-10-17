@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import random
 from collections import Counter
@@ -295,11 +294,7 @@ def eval_icmp(
     return rows
 
 
-def digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def report(name: str, rows: list[dict], sessions: list[dict], provenance: str) -> str:
+def report(name: str, rows: list[dict], sessions: list[dict]) -> str:
     outcomes = Counter(row["outcome"] for row in rows)
     session_outcomes = Counter(row["outcome"] for row in sessions)
     session_scenarios = Counter((row["scenario"], row["outcome"]) for row in sessions)
@@ -309,62 +304,9 @@ def report(name: str, rows: list[dict], sessions: list[dict], provenance: str) -
     malicious = outcomes["TP"] + outcomes["FN"]
     benign_sessions = session_outcomes["TN"] + session_outcomes["FP"]
     malicious_sessions = session_outcomes["TP"] + session_outcomes["FN"]
-    lines = [f"# {name} detector evaluation", "", provenance, ""]
-    if name == "DNS":
-        lines += [
-            "## Tool relevance and research connection", "",
-            "The selected `zrckr/dns-tunnel` tool constructs DNS queries for text and file "
-            "transfer. Its packet builder permits 100 reproducible offline transfer sessions. "
-            "Its README describes it as a local-network simulation.", "",
-            "[Chen et al., *Computers & Security* 104 (2021), 102095]"
-            "(https://doi.org/10.1016/j.cose.2020.102095) generated DNS traffic with eight "
-            "covert-channel tools, including iodine, dnscat2, and dns2tcp. "
-            "[Zheng et al. (2025)]"
-            "(https://www.joca.cn/EN/10.11772/j.issn.1001-9081.2024070972) "
-            "evaluate DNS tunnel tools and emphasize reproducible sample generation. "
-            "Neither paper tests `zrckr/dns-tunnel`. The saved iodine capture is a "
-            "research-aligned reference excluded from these 100 sessions.", "",
-        ]
-    else:
-        lines += [
-            "## Tool relevance and research connection", "",
-            "The detector inspects ICMP payloads three ways -- structure (size / pattern), "
-            "rate (per-source frequency), and content (regex, Luhn, Shannon entropy) -- so the "
-            "evaluation uses **two** real tools, driven across several input profiles, to reach "
-            "every path. "
-            "[DhavalKapil/icmptunnel](https://github.com/DhavalKapil/icmptunnel) frames raw "
-            "IPv4/UDP data inside ICMP Echo Requests; fed different inputs and cadences it "
-            "produces oversized payloads (`icmp_oversized_payload`), tiny payloads "
-            "(`icmp_non_standard_size`), sub-second bursts (`icmp_high_frequency`), and "
-            "cleartext dummy secrets that its raw framing leaves readable (`luhn_cc` and the "
-            "API-token regexes). "
-            "[Smendowski et al.'s covert-channel tool](https://github.com/Smendowski/hidden-communication-using-covert-channels) "
-            "**base64-encodes** each file chunk, placing a high-entropy ASCII token in the "
-            "payload -- the `icmp_sensitive_data_high_entropy` signal raw binary never forms, "
-            "because the content scan's UTF-8 decode drops non-ASCII bytes.", "",
-            "The [ICMPTend paper](https://doi.org/10.32604/cmc.2022.022540) describes an "
-            "ICMP covert-tunnel **detector**, not an attack generator, and names icmptunnel, "
-            "ptunnel, and icmpsh among its sample sources; it does not publish the exact "
-            "repository, version, or capture, so this is not a replication of its dataset or "
-            "detector. The base64-over-ICMP technique is itself documented by purpose-built "
-            "data-exfiltration test tools such as "
-            "[PyExfil](https://github.com/ytisf/PyExfil) (whose ICMP module base64-encodes "
-            "files for DLP testing) and [SensePost's DET](https://github.com/sensepost/DET); "
-            "these are cited as evidence that the technique is real, not run here "
-            "(PyExfil's ICMP module is Python 2 / impacket and not offline-runnable unmodified).", "",
-            "Both bundled PCAPs were built offline by the tools' own packet builders with no "
-            "socket opened: icmptunnel's C `send_icmp_packet` with `sendto` intercepted, and "
-            "Smendowski's scapy `create_icmp_payload` whose packets are written straight to a "
-            "PCAP. Distinct seeded dummy files were used per transfer. No live tunnel, packet "
-            "transmission, or receiving endpoint was exercised.", "",
-        ]
-    lines += ["## Method", "",
-             "Offline packet replay through the production packet parser and detector functions. "
-             "Each class has fresh detector state. A session is one source/destination flow "
-             "(also grouped by apex for DNS), split after more than 60 seconds of inactivity. "
-             "A session is detected if any of its packets emits an alert. `sessions.csv` is the "
-             "primary evaluation; `results.csv` retains packet-level diagnostics and messages. "
-             "This tests alerting, not live capture or blocking.", "",
+    lines = [f"# {name} detector evaluation -- result tables", "",
+             "Generated by `evaluation/run_covert_eval.py`. Numbers only; see the evaluation "
+             "write-up for method, tool provenance, and interpretation.", "",
              "## Session-level results", "",
              "| Metric | Count / value |", "| --- | ---: |",
              f"| Benign sessions | {benign_sessions} |", f"| Malicious sessions | {malicious_sessions} |",
@@ -405,60 +347,6 @@ def report(name: str, rows: list[dict], sessions: list[dict], provenance: str) -
         else:
             lines.append("- None in this sample.")
         lines.append("")
-    lines += ["## Interpretation", ""]
-    if name == "DNS":
-        missed_sessions = [row for row in sessions if row["outcome"] == "FN"]
-        missed_lengths = sorted({len(row["payload_preview"].rstrip(".")) for row in missed_sessions})
-        lines += [
-            f"The external tool produced {malicious_sessions} independent transfers, each with its own "
-            "source and run-specific domain. A transfer counts as detected when at least one "
-            "of its queries alerts. The session scenario table separates text and file transfers.",
-            "Short text transfers may stay below the length and entropy thresholds and make too few "
-            "queries for the volume rule. File transfers can have multiple queries, but these "
-            "are one datapoint per transfer.",
-            f"The {len(missed_sessions)} missed transfers in this run are single-query text "
-            f"sessions with name lengths {missed_lengths}; none reaches the eight-unique-query "
-            "volume threshold.",
-            "",
-            "All 20 cache-busting sessions are false positives from `DNS_LONG_QNAME`; "
-            "ten ordinary ten-query bursts are false positives from `DNS_TUNNEL_VOLUME`. "
-            "The benign traffic is synthetic, with different one-, two-, and ten-query sessions; "
-            "the packet and session alert rates describe this designed mix, not deployment-wide rates.",
-        ]
-    else:
-        lines += [
-            f"The two tools produced {malicious_sessions} distinct offline transfer sessions "
-            "(stratified random sampling: each run drawn from a profile, with sizes, packet "
-            "counts, send cadence, and secret tokens sampled from fixed seeded distributions). "
-            "Every malicious session is detected, and together the profiles exercise all three "
-            "detection paths. Structure: icmptunnel's raw payloads trip `icmp_oversized_payload`, "
-            "its tiny payloads trip `icmp_non_standard_size`. Rate: its burst profile exceeds the "
-            "per-second threshold and trips `icmp_high_frequency`. Content: Smendowski's base64 "
-            "payloads trip `icmp_sensitive_data_high_entropy` (a high-entropy ASCII token raw "
-            "binary never forms), and icmptunnel's cleartext-secret profile trips `luhn_cc` and "
-            "the API-token regexes. This establishes detection across the structure, rate, and "
-            "content paths, not detection of all ICMP tunnels.",
-            "",
-            f"The {session_outcomes['FP']} false-positive sessions are legitimate custom Echo "
-            "payloads: standard-size (32/56 B) pings with altered content trip "
-            "`icmp_abnormal_pattern`, non-standard sizes (48/64 B) trip `icmp_non_standard_size`, "
-            "and larger diagnostics (100/120 B) trip `icmp_oversized_payload` -- see the benign "
-            "rows of the session scenario table. Default Linux and Windows pings produce no "
-            "alerts. The benign traffic is synthetic, so the alert rates apply only to this "
-            "scenario mix.",
-            "",
-            "The current local ICMP test suite also has a failing case, "
-            "`test_whitelisted_linux_ping_prefix_is_still_inspected`: a 56-byte "
-            "payload with an encoded card in the first 16 bytes and the Linux tail "
-            "produces no alert. This is a separate false-negative vector from the "
-            "large-packet output of either tool.",
-        ]
-    lines += ["", "## Limits", "",
-              "The replay calls the production parser and detector on packets, but does not "
-              "exercise live sniffing, dropped packets, routing, gateway logs, or blocking. "
-              "The benign traffic is synthetic and the malicious traffic comes from one tool "
-              "per protocol; broader traffic sources and more tools are needed "
-              "before estimating field precision or recall.", ""]
     return "\n".join(lines) + "\n"
 
 
@@ -487,37 +375,8 @@ def main() -> None:
     write_rows(ROOT / "icmp" / "results.csv", icmp_rows)
     write_session_rows(ROOT / "dns" / "sessions.csv", dns_sessions)
     write_session_rows(ROOT / "icmp" / "sessions.csv", icmp_sessions)
-    with args.dns_manifest.open(newline="", encoding="utf-8") as handle:
-        dns_manifest = list(csv.DictReader(handle))
-    dns_commit = dns_manifest[0]["tool_commit"]
-    dns_source = ("Malicious traffic: independent text and file transfers generated by "
-                  "[zrckr/dns-tunnel](https://github.com/zrckr/dns-tunnel) "
-                  f"client `dns_ask`, source commit `{dns_commit}`; "
-                  f"{args.malicious_count} seeded runs, each with a distinct input and source IP. "
-                  f"Input PCAP SHA-256: `{digest(args.dns_pcap)}`. "
-                  f"Benign traffic: {args.benign_count} locally generated DNS sessions across ordinary, service discovery, and cache-busting names.")
-    with args.icmp_manifest.open(newline="", encoding="utf-8") as handle:
-        icmp_manifest = list(csv.DictReader(handle))
-    with args.icmp_smendowski_manifest.open(newline="", encoding="utf-8") as handle:
-        smendowski_manifest = list(csv.DictReader(handle))
-    icmptunnel_count = args.malicious_count - args.malicious_count // 2
-    smendowski_count = args.malicious_count // 2
-    icmp_source = ("Malicious traffic comes from two real tools, sampled with a fixed seed. "
-                   "[DhavalKapil/icmptunnel](https://github.com/DhavalKapil/icmptunnel) "
-                   f"`send_icmp_packet`, source commit `{icmp_manifest[0]['tool_commit']}`: "
-                   f"{icmptunnel_count} raw transfers drawn by stratified random sampling across "
-                   "oversized / tiny / burst / cleartext-secret profiles (random sizes, packet "
-                   "counts, send cadence, and dummy tokens). Input PCAP SHA-256: "
-                   f"`{digest(args.icmp_pcap)}`. "
-                   "[Smendowski et al.'s covert-channel tool](https://github.com/Smendowski/hidden-communication-using-covert-channels), "
-                   f"vendored as `external_icmp.py` (`{smendowski_manifest[0]['tool_commit']}`): "
-                   f"{smendowski_count} base64 transfers with random file sizes. Input PCAP "
-                   f"SHA-256: `{digest(args.icmp_smendowski_pcap)}`. Each transfer has a distinct "
-                   f"input and source IP. Benign traffic: {args.benign_count} locally generated "
-                   "Linux/Windows/default and random custom-size Echo sessions, with a random "
-                   "number of requests per session.")
-    (ROOT / "dns" / "REPORT.md").write_text(report("DNS", dns_rows, dns_sessions, dns_source), encoding="utf-8")
-    (ROOT / "icmp" / "REPORT.md").write_text(report("ICMP", icmp_rows, icmp_sessions, icmp_source), encoding="utf-8")
+    (ROOT / "dns" / "REPORT.md").write_text(report("DNS", dns_rows, dns_sessions), encoding="utf-8")
+    (ROOT / "icmp" / "REPORT.md").write_text(report("ICMP", icmp_rows, icmp_sessions), encoding="utf-8")
     print("DNS sessions", Counter(row["outcome"] for row in dns_sessions), "packets", Counter(row["outcome"] for row in dns_rows))
     print("ICMP sessions", Counter(row["outcome"] for row in icmp_sessions), "packets", Counter(row["outcome"] for row in icmp_rows))
 

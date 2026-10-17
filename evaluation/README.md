@@ -172,8 +172,32 @@ fresh detector state for each label group. It does not test live sniffing,
 routing, dropped packets, or gateway blocking. The Docker lab had no running
 containers when the evaluation was performed.
 
-The existing targeted DNS/ICMP test run had 47 passes and one failure:
-`test_whitelisted_linux_ping_prefix_is_still_inspected`. That failure shows
-an encoded secret in a Linux-shaped ICMP Echo prefix can evade the current
-detector; it is distinct from the large-packet transfers of either ICMP tool
-and is documented in the ICMP report.
+## Peer review and the detection / false-positive tradeoff
+
+As part of the team's mutual manual validation of each other's detectors, Sofia
+reviewed Antoine's ICMP detection (`detection/covert_channel/icmp_detector.py`,
+notes in `docs/icmp-review.md`) and found that a packet classified as a benign
+Linux ping still carried about 20 attacker-controlled, uninspected bytes -- the
+unvalidated 16-byte timeval prefix plus the ICMP id/seq header fields -- enough
+for a silent exfiltration channel that tripped none of the three checks. This
+was filed as [issue #11](https://github.com/AntoineQ1/DLPDetection/issues/11)
+and pinned as the regression test
+`test_whitelisted_linux_ping_prefix_is_still_inspected`.
+
+Antoine's fix (commit `ea2ac4c`, *"validate Linux timeval and inspect ICMP
+header fields"*) validates the 16-byte prefix and passes the id/seq bytes
+through the L7 content scanner. After merging it into this evaluation branch the
+regression test passes and the ICMP suite is green -- but the same fix **roughly
+doubled the ICMP benign false-positive rate, from 27% to 65% of sessions** (27%
+to 67.6% of packets): the stricter prefix validation now flags default Linux
+pings via `icmp_abnormal_pattern`, because their synthetic payloads do not match
+the detector's expected default-ping pattern. Default Windows pings are
+unaffected, and no malicious detection was lost (still 100%).
+
+This is the central tradeoff the evaluation surfaces: closing the Linux-prefix
+steganography channel removes a real exfiltration path at the cost of benign
+precision on legitimate Linux diagnostics. Whether those extra alerts are
+acceptable is a deployment decision -- a tighter default-ping model, or a
+validated-timeval allowance, could recover precision without reopening the
+channel. The benign traffic here is synthetic, so the 65% figure reflects this
+sample's mix, not a field rate.
