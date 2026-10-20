@@ -1,4 +1,4 @@
-# DLPDetection — Live Demo Cheatsheet
+# DLPDetection - Live Demo Cheatsheet
 
 ## Setup Prerequisites
 1. Start the stack: `docker compose up -d`

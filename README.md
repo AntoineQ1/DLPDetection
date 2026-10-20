@@ -63,14 +63,14 @@ The DLP gateway is deployed as a dual-homed bridge separating the *trusted enter
 
 The L7 engine runs inside mitmproxy and checks every outbound HTTP(S) request before it is forwarded. Each request goes through three stages: collect scannable text, scan it, and decide whether to forward or block.
 
-- **Stage 1 — Input collection:** The addon scans the URL path, every query parameter, all request headers (including `Cookie`, `Authorization`, and any custom headers) and the request body. Bodies go through `decode_body` which handles `application/x-www-form-urlencoded` (percent-escapes decoded, so `card=4111%2D1111...` becomes a flat PAN), `application/json` (recursed through to flatten scalar values out of nested objects), or any other type as plain UTF-8. Malformed input falls back to UTF-8 instead of crashing. Invisible characters (zero-width space etc.) are stripped before scanning so attackers cannot hide separators inside digit runs.
+- **Stage 1 - Input collection:** The addon scans the URL path, every query parameter, all request headers (including `Cookie`, `Authorization`, and any custom headers) and the request body. Bodies go through `decode_body` which handles `application/x-www-form-urlencoded` (percent-escapes decoded, so `card=4111%2D1111...` becomes a flat PAN), `application/json` (recursed through to flatten scalar values out of nested objects), or any other type as plain UTF-8. Malformed input falls back to UTF-8 instead of crashing. Invisible characters (zero-width space etc.) are stripped before scanning so attackers cannot hide separators inside digit runs.
 
-- **Stage 2 — Multi-detector scan (`scan_all`):** Each collected string goes through three detectors that share a common `Finding` output:
+- **Stage 2 - Multi-detector scan (`scan_all`):** Each collected string goes through three detectors that share a common `Finding` output:
   - `regex_rules`: Patterns for well-known credentials: AWS keys, GitHub tokens, OpenAI / Anthropic / Google API keys, JWTs, Stripe keys, Cloudflare tokens. Patterns were derived from official documentation and other blogs and forum discussions about them (mentioned in `RESOURCES.md`).
   - `luhn`: Credit-card detection in three steps. A regex finds 12–19 digit runs with optional spaces, dots, dashes or underscores. Each candidate is checked against the Luhn checksum. Luhn-valid numbers are then matched to real issuers (Visa, Mastercard, Amex, Maestro, JCB, UnionPay, ...) by BIN prefix and length, which drops numbers that are Luhn-valid but not actual cards.
   - `entropy`: Shannon entropy per character over whitespace-separated tokens. Tokens above the threshold are flagged. The threshold for L7 is set to 4.7 bits, since natural english is usually between 2.14 and 4.76. This way it will detect some false positives in L7 but that was considered better than letting a "normal" entropy secret pass. The `shannon_entropy` function is also used by the DNS detector. DNS detector has a different threshold. 
 
-- **Stage 3 — Alert and block:** On any finding the addon logs a `[DLP-ALERT]` through the shared logger. Matched substrings pass through `detection.common.mask.mask()` so a card number appears as `4111********1111` in the log, not as cleartext. The addon then sets `flow.response` to a 403, which stops mitmproxy from forwarding. The victim sees the 403, the attacker sink sees nothing.
+- **Stage 3 - Alert and block:** On any finding the addon logs a `[DLP-ALERT]` through the shared logger. Matched substrings pass through `detection.common.mask.mask()` so a card number appears as `4111********1111` in the log, not as cleartext. The addon then sets `flow.response` to a 403, which stops mitmproxy from forwarding. The victim sees the 403, the attacker sink sees nothing.
 
 *(Full design and WS-D.1 evasion cases are in `docs/l7-web-detection-mechanism.md`.)*
 
@@ -100,11 +100,11 @@ The finding was filed as issue #11 and pinned as the regression test `test_white
 
 #### 3.3 DNS Covert Tunnel Detection (WS C)
 
-DNS tunneling hides exfiltrated data inside the **query name (QNAME)** of outbound lookups, which egress freely even on locked-down networks. `dns_detector.py` keeps only queries (`qr == 0`), splits each QNAME into an **apex** (the last two labels) and the **subdomain** labels left of it, and applies four passive checks:
+DNS tunneling hides exfiltrated data inside the **query name (QNAME)** of outbound lookups, which egress freely even on locked-down networks (they typically bypass standard perimeter firewalls via recursive resolution). `dns_detector.py` keeps only queries (`qr == 0`), splits each QNAME into an **apex** (the last two labels) and the **subdomain** labels left of it, and applies four passive checks:
 
-- **Length (`DNS_LONG_QNAME`):** flags a single label of ≥ 20 characters or a total  QNAME of ≥ 50 characters — the naive case of stuffing a whole secret into one name.
-- **Entropy (`DNS_HIGH_ENTROPY`):** computes Shannon entropy **per label** and flags labels of ≥ 16 characters with H ≥ 3.8 bits/char, catching hex/base32/base64-encoded payloads. Per-label (not whole-string) scoring resists entropy-dilution padding.
-- **Volume (`DNS_TUNNEL_VOLUME`):** tracks unique subdomains under one apex per source and flags ≥ 8 distinct subdomains within a 60-second sliding window, catching burst (and, within the window, slow) transfers.
+- **Length (`DNS_LONG_QNAME`):** flags a single label of $\geq$ 20 characters or a total QNAME of $\geq$ 50 characters - the naive case of stuffing a whole secret into one name.
+- **Entropy (`DNS_HIGH_ENTROPY`):** computes Shannon entropy **per label** and flags labels of $\geq$ 16 characters with H $\geq$ 3.8 bits/char, catching hex/base32/base64-encoded payloads. Per-label (not whole-string) scoring resists entropy-dilution padding.
+- **Volume (`DNS_TUNNEL_VOLUME`):** tracks unique subdomains under one apex per source and flags $\geq$ 8 distinct subdomains within a 60-second sliding window, catching burst (and, within the window, slow) transfers.
 - **Content (`DNS_SENSITIVE_DATA_*`):** forwards decoded labels to the shared L7 engine (`detection.l7_web.scan_all`) for regex / Luhn checks on cleartext credentials and card numbers (see WS B).
 
 Thresholds are environment-overridable (`DNS_LABEL_LEN_THRESHOLD`,`DNS_ENTROPY_THRESHOLD`, `DNS_VOLUME_THRESHOLD`, …) for tuning without code changes.
@@ -124,6 +124,7 @@ Adversarial testing against the baseline DNS detector uncovered algorithmic flaw
 | **4** | **Multi-Query Splitting** | Splitting card numbers across sequential queries to evade regex and Luhn checks | Architectural Limit | *Documented Limitation* |
 | **5** | **DNS over TCP/53** | Forcing TCP transport to bypass Scapy's UDP BPF filter | Architectural Limit | *Documented Limitation* |
 | **6** | **Low-and-Slow Beaconing** | Sending 1 query every 10–15s to evade the 60-second sliding volume window | Operational Trade-off | *Documented Limitation* |
+| **7** | **Multi-Apex Rotation** | Spreading query chunks across distinct apex domains to evade volume aggregation (`DNS_TUNNEL_VOLUME`) | Architectural Limit | *Documented Limitation* |
 
 ##### Key Vulnerabilities & Applied Patches
 
@@ -131,16 +132,17 @@ Adversarial testing against the baseline DNS detector uncovered algorithmic flaw
   - *Bypass:* Computing Shannon entropy across the concatenated subdomain string allowed an attacker to pad a 16-character secret ($H \approx 4.0$) with repetitive characters (`aaa...`), pulling aggregate entropy down to $\sim 1.5$.
   - *Hardening:* Added per-label maximum entropy checking. Individual labels with $\ge 16$ characters and $H \ge 3.8$ now trigger `DNS_HIGH_ENTROPY` regardless of surrounding padding.
 
-- **Label Fragmentation (Hardened Branch):**
+- **Multi-Label Slicing (Hardened Branch):**
   - *Bypass:* Mapping binary data to dictionary words across multiple short labels (`winter.forest.silver.pocket.attacker.example`) kept individual labels $< 20$ characters, total length $< 50$ characters, and entropy low ($H \approx 3.1$).
   - *Hardening:* Added a sub-label count threshold (`sub_label_count >= 4`), forcing payloads into fewer, longer labels that trip length rules.
 
 - **Fundamental Bounds & Trade-offs:**
   - *Micro-chunking ceiling:* Strings shorter than 14 characters mathematically cannot reach $3.8\text{ bits/char}$ ($\log_2 N < 3.8$). Lowering thresholds to catch them causes heavy false-positive rates on common hostnames (e.g., `auth-service`).
-  - *Stateless fragmentation:* Splitting secrets across separate packets evades single-query inspection. Addressing this requires stateful stream reassembly or central logging on a recursive resolver.
+  - *Multi-query splitting:* Splitting secrets across separate packets evades single-query inspection. Addressing this requires stateful stream reassembly or central logging on a recursive resolver.
   - *Low-and-slow beaconing:* Pacing queries at 10-second intervals evades 60-second sliding windows. Extending windows to several hours significantly increases memory usage and raises false positives from benign background DNS queries.
+  - *Multi-apex rotation:* Spreading requests across several different apex domains evades `DNS_TUNNEL_VOLUME` because history is tracked per `(source_ip, apex)`. Catching this at the sniffer level by tracking the source IP alone would flag regular web browsing, so it is better handled downstream (threat feeds for new domains / SIEM correlation / locked-down internal resolvers / etc.).
 
-*(Attack scripts, test queries, and validation outputs are documented in `docs/dns-evasion-hardening.md`).*
+*(Details are available in `docs/dns-evasion-hardening.md`).*
 
 ### 4. Workstream D.2: Global Performance, Latency & Benchmark Evaluation
 
@@ -453,7 +455,7 @@ Academic project. Do not deploy or execute against external networks without exp
 
 #### 5. Quantitative L7 evaluation (WS D.2)
 
-- **L7 session evaluation harness (`evaluation/run_l7_eval.py`):** Built the offline harness that pushes 14 malicious and 10 benign hand-crafted sessions through `decode_body` + `scan_all`, times each request with `perf_counter_ns` across 100 iterations, and writes `sessions.csv` / `results.csv` / `REPORT.md` in the same format as the covert-channel evaluation. The corpus covers 6 credit cards, 5 API tokens, 3 of Diogo's evasions, and 10 benign patterns picked to stress the pre-filter, Luhn, and entropy false-positive paths — headline numbers: TPR 85.7%, FPR 0%, median pipeline latency 15 μs.
+- **L7 session evaluation harness (`evaluation/run_l7_eval.py`):** Built the offline harness that pushes 14 malicious and 10 benign hand-crafted sessions through `decode_body` + `scan_all`, times each request with `perf_counter_ns` across 100 iterations, and writes `sessions.csv` / `results.csv` / `REPORT.md` in the same format as the covert-channel evaluation. The corpus covers 6 credit cards, 5 API tokens, 3 of Diogo's evasions, and 10 benign patterns picked to stress the pre-filter, Luhn, and entropy false-positive paths - headline numbers: TPR 85.7%, FPR 0%, median pipeline latency 15 μs.
 - **End-to-end latency decomposition:** Timed real `curl` requests through the Docker + mitmproxy stack for three scenarios *(clean, blocked form, blocked JSON)* and combined with the pipeline numbers to show that the detector contributes under 0.5% of the request round-trip, dominated by TLS and container networking.
 - **Section 4.1 write-up:** Wrote the L7 subsection of §4.1 (TPR / FPR / latency tables + Level-1 methodology caveat) and extended `evaluation/README.md` to cover L7 alongside DNS and ICMP.
 

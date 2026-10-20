@@ -76,16 +76,16 @@ uv run python -m evaluation.run_covert_eval
 ```
 
 **ICMP:** The 100 sessions come from **two** real tools because the detector
-inspects ICMP payloads three ways — structure (size / pattern), rate (per-source
+inspects ICMP payloads three ways - structure (size / pattern), rate (per-source
 frequency), and content (regex, Luhn, Shannon entropy). One tool and one input
 shape would leave most of that surface unmeasured, so each tool is driven across
 several input profiles, all sampled with a fixed seed (**stratified random**:
 each run is assigned a profile from a balanced, shuffled pool, and sizes, packet
 counts, send cadence, and dummy tokens are drawn randomly per run). Every packet
-is still produced by the tool's own builder — randomness only chooses the input
+is still produced by the tool's own builder - randomness only chooses the input
 bytes and timing, never a hand-crafted packet.
 
-*icmptunnel — structure, rate, and cleartext-content (50 sessions):*
+*icmptunnel - structure, rate, and cleartext-content (50 sessions):*
 [DhavalKapil/icmptunnel](https://github.com/DhavalKapil/icmptunnel) at commit
 `267a9ec7af03bf05f467d94550f15a969bfb8611`, named (without a repository or
 version) among the traffic sources in the
@@ -101,7 +101,7 @@ regexes). Capture and per-run profile/hashes: `icmp/icmptunnel_sessions.pcap` an
 `icmp/icmptunnel_manifest.csv` (PCAP SHA-256
 `cc1ab06a4ff270ac78ae982dcd9b7cbd44886d23b6794b71f73719612a55ea47`).
 
-*Smendowski — base64 content / entropy (50 sessions):*
+*Smendowski - base64 content / entropy (50 sessions):*
 [Smendowski et al.'s covert-channel tool](https://github.com/Smendowski/hidden-communication-using-covert-channels),
 vendored as `icmp/external_icmp.py` (SHA-256
 `6a1afd034959323e24164f1cb717a8746854776d1da9f28cdddf31420895eb90`, MIT license
@@ -199,7 +199,7 @@ ICMP Echo diagnostics for the covert channels; normal web and API traffic
 patterns for L7 (form submissions, UUIDs, SHA-256 hashes, UPS tracking
 numbers, random 16-digit order IDs, IPv4 pairs, lorem ipsum, JSON API
 responses). They are not production traffic. The benign mix intentionally
-includes patterns that can challenge the detector — for L7 specifically, the
+includes patterns that can challenge the detector - for L7 specifically, the
 long hex and digit strings and the random 16-digit ID are chosen to stress
 the Luhn pre-filter and the entropy threshold without being real secrets.
 Each protocol's false-positive rate is specific to its own sample.
