@@ -8,7 +8,7 @@ Generative AI was strictly restricted to secondary tasks:
 
 - **Report Language Tuning:** Proofreading draft paragraphs for grammatical correctness and clarity. No arguments, descriptions, or report sections were authored by AI. This use may also apply to inline code comments. When text was first written by project members in their respective mother tongues, it may have been translated with common tools which may use AI (such as DeepL) or with AI LLMs directly.
 - **ASCII & Text-Based Schematics:** Formatting textual descriptions into clean ASCII diagrams to enhance document readability. As per project guidelines, final content for the report and the presentation does not contain such diagrams.
-- **Background Reading & Source Exploration:** Summarizing technical papers and contextualizing research material related to network DLP.
+- **Background Reading & Source Exploration:** Summarizing technical papers and contextualizing research material related to network DLP. Also used for searching for relevant websites with key specifications in the regex part.
 - **Unit Tests:** Generating unit tests under `tests/`. 
 - **Terminal UI & Cosmetic Formatting:** Generating presentation helpers and terminal styling tools under `ui/` using the `rich` library (progress bars, status panels, alert cards, etc.).
 - **Artifact reuse for evaluation:** Assisting to reproduce and configure the external tools in order to perform the evaluation of the DNS/ICMP protocols.

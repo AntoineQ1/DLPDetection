@@ -398,13 +398,20 @@ Academic project. Do not deploy or execute against external networks without exp
 - Shannon, C. E. (1948). *A Mathematical Theory of Communication*. Bell System Technical Journal, 27, 379–423. https://doi.org/10.1002/j.1538-7305.1948.tb01338.x
 - Wikipedia contributors. *Luhn algorithm*. https://en.wikipedia.org/wiki/Luhn_algorithm (reference specification followed when writing `luhn_valid`).
 - Wikipedia contributors. *Payment card number* (ISO/IEC 7812 overview and issuer identification number ranges). https://en.wikipedia.org/wiki/Payment_card_number (source for the ~36 issuer BIN prefix ranges and allowed lengths compiled into `ISSUERS`).
-- Secret-pattern inventories compiled into `detection/l7_web/regex_rules.py`:
-  [Gitleaks](https://github.com/gitleaks/gitleaks),
-  [GitHub Secret Scanning supported patterns](https://docs.github.com/en/code-security/secret-scanning/introduction/supported-secret-scanning-patterns),
-  [Truffle Security's trufflehog](https://github.com/trufflesecurity/trufflehog),
-  [Mazin Ahmed's secrets-patterns-db](https://github.com/mazen160/secrets-patterns-db).
-- [mitmproxy](https://mitmproxy.org/) (HTTPS interception and addon runtime).
-- [Stripe test card inventory](https://docs.stripe.com/testing#cards) (published test PAN values used in the L7 benchmark corpus).
+- Entropy threshold search: https://math.stackexchange.com/questions/3579001/prove-the-maximum-value-of-entropy-function and https://cs.stanford.edu/people/eroberts/courses/soco/projects/1999-00/information-theory/entropy_of_english_9.html
+- Used reference while building regexes:  
+[AWS] https://docs.aws.amazon.com/cli/latest/reference/sts/get-access-key-info.html and https://hackingthe.cloud/aws/general-knowledge/iam-key-identifiers/  
+[GitHub] https://github.blog/changelog/2021-03-31-authentication-token-format-updates-are-generally-available/ and https://gist.github.com/magnetikonline/073afe7909ffdd6f10ef06a00bc3bc88 and https://dev.to/devopsdaily/githubtoken-is-now-377-characters-long-we-tested-which-redaction-rules-still-catch-it-3e4e  
+[OpenAI] https://community.openai.com/t/error-api-key-should-only-contain-letters-numbers-and-can-only-contain-51-characters/750007 and https://kb.4d.com/assetid=79857  
+[Anthropic] https://bip39-phrase.com/anthropic-api-key-format/ and https://github.com/Mic52M/kelp/issues/48 and https://claudecodeguides.com/claude-api-invalid-api-key-format-error-fix/  
+[GoogleCloud] https://learn.microsoft.com/pt-pt/purview/sit-defn-google-api-key and
+https://discuss.ai.google.dev/t/account-restricted-to-aq-prefix-keys-instead-of-standard-aiza-format/171571  
+[Google Gemini] https://discuss.ai.google.dev/t/gemini-api-key-start-from-aq/171575
+https://medium.com/@raplsworks/i-created-a-gemini-api-key-and-got-aq-instead-of-aiza-a48bb6720907 and
+https://github.com/d4rkmen/M5Gemini/issues/15   
+[JWT] https://auth0.com/docs/secure/tokens/json-web-tokens/json-web-token-structure  
+[Stripe] https://gitlab.com/gitlab-org/gitlab/-/work_items/458019 and https://docs.stripe.com/api/authentication  
+[Cloudflare] https://developers.cloudflare.com/changelog/post/2026-08-26-service-token-secret-format/ and https://developers.cloudflare.com/fundamentals/api/get-started/token-formats/  
 
 ### 3. Workstream C: ICMP Covert Channel Detection
 
