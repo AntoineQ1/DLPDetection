@@ -73,7 +73,7 @@ The concrete patterns were derived independently from documentation, blogs and o
 
 ### 3.3 Credit-card detection (`luhn` + issuer prefix)
 
-This is the detector I spent the most time on. A 16-digit number that passes Luhn is not necessarily a credit card (about 10% of random 16-digit strings satisfy the checksum), so the pipeline has three stages:
+A 16-digit number that passes Luhn is not necessarily a credit card (about 10% of random 16-digit strings satisfy the checksum), so the pipeline has three stages:
 
 - **Regex pre-filter:** `(?<!\d)(?:\d[ ._-]?){11,18}\d(?!\d)` 12 to 19 digits with optional space/dot/underscore/dash separators. Lookarounds prevent matches inside longer digit runs.
 - **Luhn checksum:** Implementation from scratch following the Wikipedia description.
