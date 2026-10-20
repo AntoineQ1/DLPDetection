@@ -40,7 +40,7 @@ We evaluate traffic originating from an internal client (`172.20.0.3`), covering
 
 #### 2. Out-of-Scope & Security Assumptions
 
-- **Gateway Platform Integrity:** The gateway host OS, Docker runtime, and detector process are trusted. Host escapes and kernel exploits are out of scope.
+- **Gateway Platform Integrity:** The gateway host OS, Docker runtime, and detector process are trusted.
 - **TLS Trust Boundary:** Internal clients trust the gateway's root CA, allowing standard TLS termination and cleartext payload inspection at L7.
 - **Excluded Covert Channel Techniques:** Other covert vectors are out of scope. This includes:
   - Protocol timing or packet-interval modulation (*timing channels*).
@@ -96,7 +96,7 @@ Standard operating systems generate predictable **ICMP Echo *Request* packets**.
 
 An adversarial review of the baseline ICMP detector exposed a validation gap in the Linux-ping whitelist: a packet that the detector accepted as a benign Linux ping could still smuggle data in bytes that were never inspected. The whitelist confirmed only that the payload was 56 bytes long and that its fixed 40-byte tail matched the Linux pattern, but it skipped the first 16 bytes, which hold a timestamp that legitimately changes, and it never looked at the ICMP identifier and sequence fields. This left roughly 20 attacker-controlled bytes in every "benign" ping that tripped none of the structure, rate, or content checks, which is enough for a steady covert exfiltration channel.
 
-The finding was filed as issue #11 and pinned as the regression test `test_whitelisted_linux_ping_prefix_is_still_inspected`. The fix, in commit `ea2ac4c`, now validates the 16-byte timeval prefix and routes the identifier and sequence bytes through the Layer 7 content scanner, closing the channel. The hardening carried a measurable cost: in the offline evaluation it roughly doubled the benign ICMP false-positive rate, from 27% to 65% of sessions, because default Linux pings no longer match the expected pattern and now trip `icmp_abnormal_pattern`, while malicious detection stayed at 100%. This detection-versus-precision trade-off is quantified in §4.1.
+The finding was filed as issue #11 and pinned as the regression test `test_whitelisted_linux_ping_prefix_is_still_inspected`. The fix, in commit `ea2ac4c`, now validates the 16-byte timeval prefix and routes the identifier and sequence bytes through the Layer 7 content scanner, closing the channel. The hardening carried a measurable cost: in the offline evaluation it roughly doubled the benign ICMP false-positive rate, from 27% to 65% of sessions, because default Linux pings no longer match the expected pattern and now trip `icmp_abnormal_pattern`, while malicious detection stayed at 100%. This detection-versus-precision trade-off is quantified in section 4.1.
 
 #### 3.3 DNS Covert Tunnel Detection (WS C)
 

