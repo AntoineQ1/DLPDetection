@@ -95,7 +95,7 @@ The engine trusts the declared content type of the message and inspects each req
 - **Fundamental Bounds & Trade-offs:**
   - *Multi-Request Chunking:* Splitting a secret across two requests makes the secret fail Luhn, Entropy and Regex validation, because the gateway inspects individual requests. Fix would require state tracking across requests, which is out of scope for this project. Either way, the attack is demonstrated in `attacks/web_exfiltrate_chunk.py`, since it was considered relevant, due to the fact that even a stateful system would remain vulnerable to slow chunking and other methods.
 
-*(Full design and WS-D.1 evasion cases are in `docs/l7-web-detection-mechanism.md`.)*
+*(Full details in `docs/l7-web-detection-mechanism.md`.)*
 
 ### 3. Workstream C & D.1: Covert Channel Detection & Evasion Hardening
 
