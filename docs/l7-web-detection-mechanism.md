@@ -6,7 +6,7 @@ Most data that leaves a company today travels over HTTP(S). SaaS APIs, cloud sto
 
 The L7 part of this gateway sits inside mitmproxy and runs on every outbound request: the body gets decoded, the result is scanned by three detectors (regex patterns, Luhn credit cards, high-entropy tokens), and anything that trips a rule is logged - and the request is dropped with a 403 when necessary.
 
-Because the traffic is going through HTTPS, mitmproxy terminates the TLS using its own CA certificate. The victim container trusts this CA at build time, which is the setup you would get in a corporate environment where IT pushes a company CA to every laptop. For non-TLS traffic, the mechanism is identical, just without the certificate dance. The detection rules themselves are not specific to our lab: the Luhn checksum has been around since 1954, the regex patterns reuse what projects like *Gitleaks* and *Trufflehog* publish, and the entropy heuristic goes back to *Shannon*'s original 1948 paper.
+Because the traffic is going through HTTPS, mitmproxy terminates the TLS using its own CA certificate. The victim container trusts this CA at build time, which is the setup you would get in a corporate environment where IT pushes a company CA to every laptop. For non-TLS traffic, the mechanism is identical, just without the certificate dance. The detection rules themselves are not specific to our lab: the Luhn checksum has been around since 1954, the regex patterns were derived from documentation that already existed (and projects like GitLeaks already implement them, even though we didn't reuse directly the ones they use), and the entropy heuristic goes back to *Shannon*'s original 1948 paper.
 
 ## 2. Threat Model
 
@@ -71,14 +71,14 @@ Some secrets have fixed, well-known shapes. AWS access key IDs always start with
 
 The `regex_rules.RULES` list holds these patterns. Each rule has a `rule_id` (what shows up in the alert), a compiled `re.Pattern`, and a severity. The `scan()` function runs each pattern over the input text with `finditer` and emits a `Finding` for every match.
 
-The concrete patterns are drawn from the inventories published by *Gitleaks*, *GitHub Secret Scanning*, *Trufflehog*, and *Mazin Ahmed's secrets-patterns-db*. These are kept in a central list rather than hardcoded per detector so that adding a new rule is a one-line change.
+The concrete patterns were derived independently from documentation, blogs and other websites. These are kept in a central list rather than hardcoded per detector so that adding a new rule is a one-line change. This is even a easier change if we consider that its possible to copy directly regexes from projects such as *Gitleaks* and others, but we decided to derive some regexes by ourselves to prevent eventual licensing constraints from those projects. 
 
 ### 3.3 Credit-card detection (`luhn` + issuer prefix)
 
-This is the detector I spent the most time on, and the one that most clearly shows the problem with a one-shot regex. A 16-digit number that passes Luhn is not necessarily a credit card. About 10% of random 16-digit strings happen to satisfy the checksum, which means a tracking number, an order ID or a hash can trigger a false alarm. Hence, the pipeline has three stages.
+This is the detector Jonas spent the most time on, and the one that most clearly shows the problem with a one-shot regex. A 16-digit number that passes Luhn is not necessarily a credit card. About 10% of random 16-digit strings happen to satisfy the checksum, which means a tracking number, an order ID or a hash can trigger a false alarm. Hence, the pipeline has three stages.
 
 1. **Regex pre-filter.** The pattern `(?<!\d)(?:\d[ ._-]?){11,18}\d(?!\d)` finds runs of 12 to 19 digits that may be separated by single spaces, dots, underscores or dashes. The negative lookbehind and lookahead stop it from matching inside a longer digit run, which prevents false positives on long hashes or IDs.
-2. **Luhn checksum.** I implemented this one from scratch following the Wikipedia description. Reverse the digits, double every second one, subtract 9 if the result exceeds 9, sum everything up, check divisibility by 10. This is the exact validation banks use when a cashier types a card number by hand.
+2. **Luhn checksum.** Jonas implemented this one from scratch following the Wikipedia description. Reverse the digits, double every second one, subtract 9 if the result exceeds 9, sum everything up, check divisibility by 10. This is the exact validation banks use when a cashier types a card number by hand.
 3. **Issuer prefix and length.** A valid Luhn number can still be nonsense. Every real issuer publishes a BIN range (first 2 to 8 digits) and a set of allowed lengths. Visa starts with 4 and comes in 13, 16 or 19 digits. Mastercard starts with 2221-2720 or 51-55, always 16 digits. Amex starts with 34 or 37, always 15. The `ISSUERS` table lists around 35 issuers from the Wikipedia payment card number article. Only candidates whose prefix lands in one of these ranges and whose length matches that issuer survive. Diogo added this stage after we saw the FP rate on raw Luhn.
 
 If all three stages pass, the finding carries the matched substring, its position in the body, the number of digits, and the matched issuer name as metadata.
@@ -87,9 +87,7 @@ If all three stages pass, the finding carries the matched substring, its positio
 
 Not every secret has a known shape. Internal tokens, custom API keys, random session identifiers all look like base64 or hex strings of some length. Regex cannot match "a string of 32 characters with high entropy" because entropy is not a regular property.
 
-The module exports a `shannon_entropy(text)` function that computes bits per character. A random base64 string sits around 5.5-6.0 bits, English text around 4.5, a UUID near 4.1. The planned detector tokenizes the input and emits a Finding for every token above a threshold of around 4.5 bits over a length of 20 or more.
-
-**Status:** `shannon_entropy` is implemented but the `scan()` function currently returns an empty list. The thresholds and the tokenization need to be tuned against the FPR benchmark before this detector is turned on. Covert channel detection (DNS workstream) also uses `shannon_entropy`, which is why the function is factored out.
+The module exports a `shannon_entropy(text)` function that computes bits per character. The threshold is set to 4.7 bits since English text maximum entropy sits around 4.76. For around 62 symbol alphabet (0-9a-zA-Z and punctuation present in the computed regexes), the maximum entropy is log_2(62) = 5.95 bits. The detector isolates at least 16 characters and flags any possible candidate that gets a score above 4.7. This limit can be changed according to the user needs by changing the global variable ENTROPY_THRESHOLD and ENTROPY_MIN_CHARS.
 
 ### 3.5 Alerting and blocking (`addon.py`)
 
