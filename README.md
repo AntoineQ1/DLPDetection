@@ -484,26 +484,34 @@ Academic project. Do not deploy or execute against external networks without exp
 
 ### Individual contribution: Diogo
 
-#### 1. L7 Web DLP engine: Credit-card detection hardening (WS B)
+#### 1. L7 Web DLP engine: Credit-card Detection Hardening (WS B)
 
 - **Issuer prefix & length validation (`detection/l7_web/luhn.py`):**  
-Extended Jonas Luhn validation by checking if each candidate mathed real credit card issuers (from a Wikipedia list). By checking BIN prefix ranges and card number lengths, we were able to reduce false positives that could came, for example, from timestamps that otherwise will be luhn valid. Each issuer also carries a `include_detection` flag that could be used for testing and/or statistics. 
+Extended Jonas Luhn validation by checking if each candidate matched real credit card issuers (from a Wikipedia list). By checking BIN prefix ranges and card number lengths, we were able to reduce false positives that could come, for example, from timestamps that otherwise would be Luhn valid. Each issuer also carries a `include_detection` flag that could be used for testing and/or statistics. 
 - **Separator & length regex fix (`detection/l7_web/luhn.py`):**
 Added more separators to the candidate regex and fixed its length to cover, for example, Maestro cards (that are shorter than usual cards)
 - **Test coverage (`tests/test_l7_web.py`)**
-Added tests such as: test_luhn_empty(), test_luhn_receives_char(), test_scan_ignores_all_zeros_but_luhn_isvalid(), test_scan_ignores_milisecond_timestamp_but_luhn_isvalid(), test_scan_finds_cc_with_dots(), test_scan_finds_cc_with_underscores(), and others, to guarantee the credit-card detection hardening was well implemented and too proof the changes were relevant.
+Added tests such as: test_luhn_empty(), test_luhn_receives_char(), test_scan_ignores_all_zeros_but_luhn_isvalid(), test_scan_ignores_milisecond_timestamp_but_luhn_isvalid(), test_scan_finds_cc_with_dots(), test_scan_finds_cc_with_underscores(), and others, to guarantee the credit-card detection hardening was well implemented and to prove the changes were relevant.
 
-#### 2. L7 Web DLP engine: Detection pipeline wiring (WS B)
-- **Addon.py
-[Diogo TODO: COMPLETE]
+#### 2. L7 Web DLP Engine: Detection Pipeline fixes (WS B)
 
-#### 3. L7 Web DLP engine: API key regex rules (WS B)
-- **credential patterns (`detection/l7_web/regex_rules.py`):**
-Implemented regex patterns for famous companies such as Amazon (AWS), GitHub, OpenAI, Google Cloud API and Gemini, Stripe, Cloudflare. JWTs were also considered relevant. This patterns were not reused from any licensed detection projects, they were derived from documentation and public format specifications, blogs and other websites mentioned in ...
+- **Header scanning (`detection/l7_web/addon.py`):**  
+Extended the addon to scan every request header, including Cookie, Authorization, and any custom header, closing a bypass where secrets placed in headers were never inspected.
+- **Invisible character stripping (`detection/l7_web/__init__.py`)**  
+Added a helper function at start of `scan_all` that filtered out non-printable characters. Without this, inserting invisible separators between digit groups would break regex and Luhn match, letting a credit card leak, for example.
+
+#### 3. L7 Web DLP Engine: API Key Regex Rules (WS B)
+
+- **Credential patterns (`detection/l7_web/regex_rules.py`):**  
+Implemented regex patterns for famous companies such as Amazon (AWS), GitHub, OpenAI, Google Cloud API and Gemini, Stripe, Cloudflare. JWTs were also considered relevant. These patterns were not reused from any licensed detection projects, they were derived from documentation and public format specifications, blogs and other websites mentioned in the references section.
 - **Regex test suite (`tests/test_l7_web.py`):**
 Added tests for each regex rule using synthetically generated, structurally valid but never-issued token.
 
-[Diogo TODO: COMPLETE]
+#### 4. L7 Evasion Testing & Hardening (WS D.1)
+- **Gzip compression evasion (`attacks/web_exfiltrate_gzip.py`):**
+Identified that `decode_body` trusts the sender's declared `Content-Type`. It only checks application/x-www-form-urlencoded and application/json. Everything else is seen and analysed as if it were text. By compressing a credit card number and sending it as `text/plain` the decoder will see the compressed credit card as normal text and try to verify it. It will bypass all verifications and so, the credit card was leaked.
+- **Multi-request chunking evasion (`attacks/web_exfiltrate_chunk.py`):**
+Identified that the gateway inspects requests independently and implemented an attack splitting a credit-card number across different requests. Each half is failing Luhn so this attack leaks the credit-card. This is an architectural limitation.
 
 ### Individual contribution: Sofia
 
