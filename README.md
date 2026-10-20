@@ -175,7 +175,7 @@ For ICMP the 100 malicious sessions are split evenly between `DhavalKapil/icmptu
 
 **Layer 7 (HTTP)**
 
-The L7 Web pipeline runs synchronously inline and is deterministic per request, so the quantitative question is detection coverage across payload variants rather than statistical sample size. We evaluate against a hand-crafted corpus of 14 malicious and 10 benign sessions (`evaluation/run_l7_eval.py`), covering credit cards (Visa, Mastercard, Amex, nested JSON, URL-encoded separators), API tokens (AWS, GitHub, OpenAI, JWT, Stripe), three evasion attacks (invisible-unicode, gzip, multi-request chunking), and 10 benign patterns that deliberately stress potential false-positive paths (SHA256 hash, UUID, random 16-digit order id, IPv4 pair, long plain text). The scanner is called directly through `decode_body` + `scan_all`, mirroring the exact code path the mitmproxy addon takes on live traffic.
+The L7 Web methodology is deliberately different from the covert-channel one. DNS and ICMP use published attack tools (`zrckr/dns-tunnel`, `icmptunnel`, Smendowski) to generate 100 malicious sessions each. No equivalent canonical open-source L7-DLP attack tool exists; the standard L7-DLP benchmarks in industry either use proprietary curated HAR dumps or hand-crafted PCI/API-key samples. We therefore evaluate L7 against a hand-crafted corpus of 14 malicious and 10 benign sessions (`evaluation/run_l7_eval.py`), with scenarios chosen for coverage breadth rather than statistical volume. This is reasonable here because the L7 pipeline is deterministic per request (same input → same findings), so additional samples of the same attack technique add no new insight. What matters is attack-vector diversity. The malicious corpus covers credit cards (Visa, Mastercard, Amex, nested JSON, URL-encoded separators), API tokens (AWS, GitHub, OpenAI, JWT, Stripe), and three evasion attacks (invisible-unicode, gzip, multi-request chunking). The 10 benign scenarios deliberately stress potential false-positive paths (SHA256 hash, UUID, random 16-digit order id, IPv4 pair, long plain text). The scanner is called directly through `decode_body` + `scan_all`, mirroring the exact code path the mitmproxy addon takes on live traffic.
 
 The detector identified 12 of the 14 malicious sessions (85.7%) and flagged 0 of the 10 benign sessions (0% false-positive rate). The two missed sessions are our own evasions documented in `docs/l7-evasion-hardening.md`: `visa_gzipped` (compression wrapping, countermeasure available as an opt-in decoder patch) and `visa_chunked` (architectural limit: stateless per-request inspection cannot reassemble secrets split across separate HTTP flows).
 
@@ -372,7 +372,17 @@ Academic project. Do not deploy or execute against external networks without exp
 
 ### 2. Workstream B: L7 Web DLP & Content Inspection
 
-- *[Placeholder: Add any specific sources or papers used by Diogo & Jonas]*
+- Luhn, H. P. (1960). *Computer for verifying numbers*. US Patent 2,950,048.
+- Shannon, C. E. (1948). *A Mathematical Theory of Communication*. Bell System Technical Journal, 27, 379–423. https://doi.org/10.1002/j.1538-7305.1948.tb01338.x
+- Wikipedia contributors. *Luhn algorithm*. https://en.wikipedia.org/wiki/Luhn_algorithm (reference specification followed when writing `luhn_valid`).
+- Wikipedia contributors. *Payment card number* (ISO/IEC 7812 overview and issuer identification number ranges). https://en.wikipedia.org/wiki/Payment_card_number (source for the ~36 issuer BIN prefix ranges and allowed lengths compiled into `ISSUERS`).
+- Secret-pattern inventories compiled into `detection/l7_web/regex_rules.py`:
+  [Gitleaks](https://github.com/gitleaks/gitleaks),
+  [GitHub Secret Scanning supported patterns](https://docs.github.com/en/code-security/secret-scanning/introduction/supported-secret-scanning-patterns),
+  [Truffle Security's trufflehog](https://github.com/trufflesecurity/trufflehog),
+  [Mazin Ahmed's secrets-patterns-db](https://github.com/mazen160/secrets-patterns-db).
+- [mitmproxy](https://mitmproxy.org/) (HTTPS interception and addon runtime).
+- [Stripe test card inventory](https://docs.stripe.com/testing#cards) (published test PAN values used in the L7 benchmark corpus).
 
 ### 3. Workstream C: ICMP Covert Channel Detection
 
@@ -440,6 +450,12 @@ Academic project. Do not deploy or execute against external networks without exp
 
 - **L7 detection documentation (`docs/l7-web-detection-mechanism.md`):** Authored the standalone technical reference covering the three-stage credit-card pipeline *(regex / Luhn / issuer prefix)*, the body decoder's dispatch and fallback behavior, the entropy infrastructure, and the alerting path through mitmproxy.
 - **Initial unit test suite (`tests/test_l7_web.py`) & repository bootstrap:** Wrote the initial pytest suite covering Luhn edge cases, scan integration *(mixed separators, offset correctness, multiple cards)*, decoder behaviour *(nested JSON, URL-encoded multi-values, broken bodies)*, and false-positive protection (the harness Diogo later extended for the issuer-prefix and regex-pattern cases). Also set up the initial package layout *(`detection/`, `attacks/`, `evaluation/`, `tests/`)* before team-wide implementation began.
+
+#### 5. Quantitative L7 evaluation (WS D.2)
+
+- **L7 session evaluation harness (`evaluation/run_l7_eval.py`):** Built the offline harness that pushes 14 malicious and 10 benign hand-crafted sessions through `decode_body` + `scan_all`, times each request with `perf_counter_ns` across 100 iterations, and writes `sessions.csv` / `results.csv` / `REPORT.md` in the same format as the covert-channel evaluation. The corpus covers 6 credit cards, 5 API tokens, 3 of Diogo's evasions, and 10 benign patterns picked to stress the pre-filter, Luhn, and entropy false-positive paths — headline numbers: TPR 85.7%, FPR 0%, median pipeline latency 15 μs.
+- **End-to-end latency decomposition:** Timed real `curl` requests through the Docker + mitmproxy stack for three scenarios *(clean, blocked form, blocked JSON)* and combined with the pipeline numbers to show that the detector contributes under 0.5% of the request round-trip, dominated by TLS and container networking.
+- **Section 4.1 write-up:** Wrote the L7 subsection of §4.1 (TPR / FPR / latency tables + Level-1 methodology caveat) and extended `evaluation/README.md` to cover L7 alongside DNS and ICMP.
 
 ### Individual contribution: Diogo
 
