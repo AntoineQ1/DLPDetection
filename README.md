@@ -241,7 +241,7 @@ We therefore evaluate L7 against a hand-crafted corpus of 14 malicious and 10 be
 
 The scanner is called directly through `decode_body` + `scan_all`, mirroring the exact code path the mitmproxy addon takes on live traffic.
 
-The detector identified 12 of the 14 malicious sessions (85.7%) and flagged 0 of the 10 benign sessions (0% false-positive rate). The two missed sessions are our own evasions documented in `docs/l7-evasion-hardening.md`: `visa_gzipped` (compression wrapping, countermeasure available as an opt-in decoder patch) and `visa_chunked` (architectural limit: stateless per-request inspection cannot reassemble secrets split across separate HTTP flows).
+The detector identified 12 of the 14 malicious sessions (85.7%) and flagged 0 of the 10 benign sessions (0% false-positive rate). The two missed sessions are our own evasions (see §2.2): `visa_gzipped` (compression wrapping, countermeasure available as an opt-in decoder patch) and `visa_chunked` (architectural limit: stateless per-request inspection cannot reassemble secrets split across separate HTTP flows).
 
 | Scenario | Label | Sessions | Outcome |
 | --- | --- | ---: | --- |

@@ -300,9 +300,9 @@ categories: credit cards (6 scenarios: Visa plain, dashed, URL-encoded dashes,
 nested in JSON; Mastercard; Amex), API tokens (5 scenarios: AWS access key,
 GitHub token, OpenAI user key, JWT, Stripe test key), and the three
 WS-D.1 evasion vectors (invisible-unicode spacing, gzip compression, and
-multi-request chunking, see `docs/l7-evasion-hardening.md`). The evasion
+multi-request chunking, see §2.2 of the project README). The evasion
 cases are the ones the detector is expected to miss on the baseline build;
-their patches are opt-in or architectural and tracked in that document.
+their patches are opt-in or architectural and tracked in that section.
 
 The scanner is called directly through the production `decode_body` +
 `scan_all` entry points (the exact same code path the mitmproxy addon
@@ -360,7 +360,7 @@ uv run python -m evaluation.run_l7_eval
 
 The two misses are exactly the two evasion vectors the baseline detector is
 not expected to catch (gzip compression and multi-request chunking, see
-`docs/l7-evasion-hardening.md`); the third evasion vector tested
+§2.2 of the project README); the third evasion vector tested
 (zero-width-space spacing) is caught. Every credit-card and API-token
 scenario in cleartext is caught, and every benign scenario is clean (0 FP).
 
