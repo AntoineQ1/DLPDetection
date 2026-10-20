@@ -15,12 +15,12 @@ class Finding:
     meta: dict = field(default_factory=dict)
 
 # Helper to prevent invisible unicode chars
-def _remove_invisible_text(text: str) -> str:
+def remove_invisible_text(text: str) -> str:
     return "".join(char for char in text if char.isprintable())
 
 def scan_all(text: str, source: str = "body") -> list[Finding]:
     from . import entropy, luhn, regex_rules
-    text = _remove_invisible_text(text)
+    text = remove_invisible_text(text)
     hits: list[Finding] = []
     for module in (regex_rules, luhn, entropy):
         for f in module.scan(text):
