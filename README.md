@@ -505,4 +505,24 @@ Added tests for each regex rule using synthetically generated, structurally vali
 
 [Diogo TODO: COMPLETE]
 
-### Individual contribution: Sofía
+### Individual contribution: Sofia
+
+#### 1. DNS covert-channel detection and attack simulation (WS C)
+
+- **Detector design and implementation:** Built the initial DNS tunnel analyzer ([PR #1](https://github.com/AntoineQ1/DLPDetection/pull/1)), then integrated it into `detection/covert_channel/dns_detector.py` and the passive sniffer. The detector parses outbound queries, separates the apex from payload labels, and combines QNAME length, Shannon entropy, and per-source/per-apex unique-subdomain volume checks. I connected DNS inspection to the shared L7 scanner for cleartext credentials and card numbers. Antoine later proposed further entropy and label-depth hardening in open [PR #4](https://github.com/AntoineQ1/DLPDetection/pull/4) and [PR #6](https://github.com/AntoineQ1/DLPDetection/pull/6).
+- **Attack and test tools:** Developed the DNS exfiltration examples in `attacks/dns_exfiltrate.py` for plaintext, hex, base32, and URL-safe base64 payloads, plus the responding `servers/dns_sink.py`. Added DNS heuristic and integration tests in `tests/test_covert_channel_dns.py` and documented the detector and its limits in `docs/dns-detection-mechanism.md`.
+- **Cross-label card detection:** Implemented the fix for [issue #7](https://github.com/AntoineQ1/DLPDetection/issues/7), joining consecutive numeric DNS labels before Luhn validation so a card number split by dots is still detected.
+
+#### 2. Adversarial review of ICMP detection (WS D.1)
+
+- **Evasion and robustness findings:** Reviewed Antoine's ICMP detector and documented the findings in `docs/icmp-evasion-hardening.md`. Filed [issue #9](https://github.com/AntoineQ1/DLPDetection/issues/9) for outbound Echo Replies being skipped, [issue #11](https://github.com/AntoineQ1/DLPDetection/issues/11) for about 20 uninspected bytes in a whitelisted Linux ping, and [issue #13](https://github.com/AntoineQ1/DLPDetection/issues/13) for unbounded per-source rate-tracker state. I supplied a regression example for issue #11; Antoine implemented the detector hardening. I opened [PR #15](https://github.com/AntoineQ1/DLPDetection/pull/15) to track Antoine's bounded-cache fix for issue #13; it remains open.
+- **Validation of the hardening:** Rechecked the Linux-ping fix against the evaluation corpus. I found that the original benign fixture used a stale timestamp and falsely made the fix appear to raise the benign alert rate from 27% to 65%. I corrected the fixture and reran the evaluation in [PR #14](https://github.com/AntoineQ1/DLPDetection/pull/14); the current ICMP result is 100/100 malicious sessions detected and 27/100 benign sessions flagged in this designed sample.
+
+#### 3. Reproducible covert-channel evaluation (WS D.2)
+
+- **Evaluation pipeline:** Built `evaluation/run_covert_eval.py` to replay captured DNS and ICMP traffic through the production parsers and detectors, record packet and session outcomes, and generate the result tables. Prepared captures and manifests using `zrckr/dns-tunnel` and an iodine reference capture for DNS, and `icmptunnel` and the Smendowski tool for ICMP ([PR #12](https://github.com/AntoineQ1/DLPDetection/pull/12)).
+- **Analysis and report:** Authored the DNS methodology , scenario breakdowns, related-work context, and interpretation in `evaluation/README.md`. Contributedto ICMP methodology, related-work context, designed the large-scale evaluation and its analysis. Each protocol has 100 malicious and 100 benign sessions. 
+
+#### 4. Documentation and integration
+
+- **Project report:** Wrote and revised the README sections on DNS detection, ICMP evasion analysis, and covert-channel evaluation, with supporting references and protocol documentation. Contributed the evaluation-specific AI-use disclosure in `docs/AI_USE.md`.
