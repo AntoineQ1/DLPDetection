@@ -132,7 +132,7 @@ Adversarial testing against the baseline DNS detector uncovered algorithmic flaw
   - *Bypass:* Computing Shannon entropy across the concatenated subdomain string allowed an attacker to pad a 16-character secret ($H \approx 4.0$) with repetitive characters (`aaa...`), pulling aggregate entropy down to $\sim 1.5$.
   - *Hardening:* Added per-label maximum entropy checking. Individual labels with $\ge 16$ characters and $H \ge 3.8$ now trigger `DNS_HIGH_ENTROPY` regardless of surrounding padding.
 
-- **Multi-Label Slicing (Hardened Branch):**
+- **Multi-Label Slicing (Patched - PR #6):**
   - *Bypass:* Mapping binary data to dictionary words across multiple short labels (`winter.forest.silver.pocket.attacker.example`) kept individual labels $< 20$ characters, total length $< 50$ characters, and entropy low ($H \approx 3.1$).
   - *Hardening:* Added a sub-label count threshold (`sub_label_count >= 4`), forcing payloads into fewer, longer labels that trip length rules.
 
@@ -177,7 +177,11 @@ For ICMP the 100 malicious sessions are split evenly between `DhavalKapil/icmptu
 
 **Layer 7 (HTTP)**
 
-The L7 Web methodology is deliberately different from the covert-channel one. DNS and ICMP use published attack tools (`zrckr/dns-tunnel`, `icmptunnel`, Smendowski) to generate 100 malicious sessions each. No equivalent canonical open-source L7-DLP attack tool exists; the standard L7-DLP benchmarks in industry either use proprietary curated HAR dumps or hand-crafted PCI/API-key samples. We therefore evaluate L7 against a hand-crafted corpus of 14 malicious and 10 benign sessions (`evaluation/run_l7_eval.py`), with scenarios chosen for coverage breadth rather than statistical volume. This is reasonable here because the L7 pipeline is deterministic per request (same input -> same findings), so additional samples of the same attack technique add no new insight. What matters is attack-vector diversity. The malicious corpus covers credit cards (Visa, Mastercard, Amex, nested JSON, URL-encoded separators), API tokens (AWS, GitHub, OpenAI, JWT, Stripe), and three evasion attacks (invisible-unicode, gzip, multi-request chunking). The 10 benign scenarios deliberately stress potential false-positive paths (SHA256 hash, UUID, random 16-digit order id, IPv4 pair, long plain text). The scanner is called directly through `decode_body` + `scan_all`, mirroring the exact code path the mitmproxy addon takes on live traffic.
+The L7 Web methodology is deliberately different from the covert-channel one. DNS and ICMP use published attack tools (`zrckr/dns-tunnel`, `icmptunnel`, Smendowski) to generate 100 malicious sessions each. No equivalent canonical open-source L7-DLP attack tool exists; the standard L7-DLP benchmarks in industry either use proprietary curated HAR dumps or hand-crafted PCI/API-key samples. 
+
+We therefore evaluate L7 against a hand-crafted corpus of 14 malicious and 10 benign sessions (`evaluation/run_l7_eval.py`), with scenarios chosen for coverage breadth rather than statistical volume. This is reasonable here because the L7 pipeline is deterministic per request (same input -> same findings), so additional samples of the same attack technique add no new insight. What matters is attack-vector diversity. The malicious corpus covers credit cards (Visa, Mastercard, Amex, nested JSON, URL-encoded separators), API tokens (AWS, GitHub, OpenAI, JWT, Stripe), and three evasion attacks (invisible-unicode, gzip, multi-request chunking). The 10 benign scenarios deliberately stress potential false-positive paths (SHA256 hash, UUID, random 16-digit order id, IPv4 pair, long plain text). 
+
+The scanner is called directly through `decode_body` + `scan_all`, mirroring the exact code path the mitmproxy addon takes on live traffic.
 
 The detector identified 12 of the 14 malicious sessions (85.7%) and flagged 0 of the 10 benign sessions (0% false-positive rate). The two missed sessions are our own evasions documented in `docs/l7-evasion-hardening.md`: `visa_gzipped` (compression wrapping, countermeasure available as an opt-in decoder patch) and `visa_chunked` (architectural limit: stateless per-request inspection cannot reassemble secrets split across separate HTTP flows).
 
@@ -328,19 +332,16 @@ uv run pytest
 
 ## Standardized Alert Format
 
-Both the inline proxy and passive sniffers output standardized JSON records prefixed with `[DLP-ALERT]`:
+The sniffer output shows the received data, and the gateway / dlp-covert-detector logs also log all alerts.
 
-```json
-[DLP-ALERT] {
-  "timestamp": 1790333178.47,
-  "channel": "DNS_COVERT",
-  "rule_id": "DNS_HIGH_ENTROPY",
-  "severity": "high",
-  "source_ip": "172.20.0.3",
-  "destination": "attacker.example",
-  "blocked": false,
-  "details": { "qname": "...", "qtype": "A", "entropy": 4.07, "payload_len": 57 }
-}
+For instance :
+
+```text
+╭─ ⚠  HIGH DNS_HIGH_ENTROPY  ALLOWED  ─────────────────────────────────────────╮
+│    Flow  172.20.0.3 → attacker.example  (12:26:59 · DNS_COVERT)              │
+│ Details  qname=c0.inhu4rsjircu4vcjifgf6s2fle.exfil.attacker.example          │
+│          qtype=A   entropy=3.991   payload_len=33                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ## Documentation Index
@@ -420,7 +421,7 @@ Academic project. Do not deploy or execute against external networks without exp
 - **Hardening & implemented patches:**
   - *Entropy dilution (PR #4):* Demonstrated that padding high-entropy secrets with repeating characters dropped the average entropy below threshold; patched `extract_features()` to track per-label maximum entropy, raising detection capabilities.
   - *Multi-label slicing (PR #6):* Identified length-rule bypasses using multi-label splitting; implemented a patch introducing sub-label depth tracking (`sub_label_count >= 4`) to eliminate this attack vector.
-- **Documented bounds & limitations:** Documented detection limits that cannot be caught by single-packet heuristics: the Shannon entropy ceiling on short strings, multi-query payload splitting, transport bypasses (DNS over TCP/53), and low-and-slow queries evading sliding windows.
+- **Documented bounds & limitations:** Documented detection limits that cannot be caught by single-packet heuristics: the Shannon entropy ceiling on short strings, multi-query payload splitting, transport bypasses (DNS over TCP/53), and low-and-slow queries evading sliding windows, and multi-apex domain rotation.
 
 #### 4. Documentation, integration & team coordination
 
