@@ -81,7 +81,7 @@ The engine trusts the declared content type of the message and inspects each req
 
 | # | Vector | Technique & Target Rule | Category | Status |
 | --- | --- | --- | --- | --- |
-| **1** | **Gzip Compression** | Sending a gzip-compressed body with `Content-type: text/plain` header bypasses every check | Implementation Gap | **Patched** (uncomment the commented lines of decoder.py) |
+| **1** | **Gzip Compression** | Sending a gzip-compressed body with `Content-type: text/plain` bypasses every check | Implementation Gap | **Patched** (uncomment the commented lines of decoder.py) |
 | **2** | **Multi-Request Chunking** | Splitting credit-card (or other secret) across multiple requests. None of them satisfies Luhn or any regex. | Architectural Limit | *Documented Limitation* |
 
 ##### Key Vulnerabilities & Applied Patches
@@ -200,7 +200,11 @@ For ICMP the 100 malicious sessions are split evenly between `DhavalKapil/icmptu
 
 **Layer 7 (HTTP)**
 
-The L7 evaluation uses a different corpus from DNS and ICMP. Those two have published attack tools (`zrckr/dns-tunnel`, `icmptunnel`, Smendowski) that generate 100 malicious sessions each; no comparable open-source L7-DLP attack tool exists, so our corpus is hand-crafted. The L7 pipeline is also deterministic per request (same input, same findings), so sample volume matters less than attack-vector diversity. 14 malicious and 10 benign scenarios cover credit cards (Visa, Mastercard, Amex, nested JSON, URL-encoded), API tokens (AWS, GitHub, OpenAI, JWT, Stripe), the three evasions from `docs/l7-evasion-hardening.md`, and benign stressors (SHA256 hash, UUID, 16-digit order id, IPv4, plain text). The scanner is called directly through `decode_body` + `scan_all`, the same code path the mitmproxy addon uses.
+The L7 Web methodology is deliberately different from the covert-channel one. DNS and ICMP use published attack tools (`zrckr/dns-tunnel`, `icmptunnel`, Smendowski) to generate 100 malicious sessions each. No equivalent canonical open-source L7-DLP attack tool exists; the standard L7-DLP benchmarks in industry either use proprietary curated HAR dumps or hand-crafted PCI/API-key samples. 
+
+We therefore evaluate L7 against a hand-crafted corpus of 14 malicious and 10 benign sessions (`evaluation/run_l7_eval.py`), with scenarios chosen for coverage breadth rather than statistical volume. This is reasonable here because the L7 pipeline is deterministic per request (same input -> same findings), so additional samples of the same attack technique add no new insight. What matters is attack-vector diversity. The malicious corpus covers credit cards (Visa, Mastercard, Amex, nested JSON, URL-encoded separators), API tokens (AWS, GitHub, OpenAI, JWT, Stripe), and three evasion attacks (invisible-unicode, gzip, multi-request chunking). The 10 benign scenarios deliberately stress potential false-positive paths (SHA256 hash, UUID, random 16-digit order id, IPv4 pair, long plain text). 
+
+The scanner is called directly through `decode_body` + `scan_all`, mirroring the exact code path the mitmproxy addon takes on live traffic.
 
 The detector identified 12 of the 14 malicious sessions (85.7%) and flagged 0 of the 10 benign sessions (0% false-positive rate). The two missed sessions are our own evasions documented in `docs/l7-evasion-hardening.md`: `visa_gzipped` (compression wrapping, countermeasure available as an opt-in decoder patch) and `visa_chunked` (architectural limit: stateless per-request inspection cannot reassemble secrets split across separate HTTP flows).
 
@@ -213,17 +217,16 @@ The detector identified 12 of the 14 malicious sessions (85.7%) and flagged 0 of
 | `visa_chunked` (multi-request split, architectural limit) | malicious | 1 | 1 FN |
 | Normal web/API traffic (10 scenarios) | benign | 10 | 10 TN |
 
-Latency was measured three ways to separate the detector's own cost from Docker and gateway overhead. The detector pipeline (`decode_body` + `scan_all`) is timed in isolation with `time.perf_counter_ns` across 100 iterations per request. End-to-end latency is sampled from the victim container through the full mitmproxy + Docker stack with 10 `curl` runs per scenario (warm-up excluded). A localhost baseline is sampled by running a Python `http.server` inside the victim container and `curl`-ing `127.0.0.1`, which bypasses both the gateway and Docker's inter-container networking.
+Latency is measured in two complementary ways. The detector pipeline (`decode_body` + `scan_all`) is timed in isolation with `time.perf_counter_ns` across 100 iterations per request. End-to-end latency is sampled from the victim container through the full mitmproxy + Docker stack (10 iterations per scenario, warm-up excluded).
 
 | Measurement | Scenario | Median | Max |
 | --- | --- | ---: | ---: |
 | Pipeline-isolated | all requests | 15 μs | 45 μs |
-| Localhost baseline (no gateway, no inter-container net) | clean passthrough | 0.57 ms | 1.4 ms |
-| End-to-end via gateway | clean passthrough | 5.2 ms | 7.9 ms |
-| End-to-end via gateway | blocked card (form) | 3.8 ms | 5.2 ms |
-| End-to-end via gateway | blocked card (nested JSON) | 4.0 ms | 5.9 ms |
+| End-to-end | clean passthrough | 5.2 ms | 7.9 ms |
+| End-to-end | blocked card (form) | 3.8 ms | 5.2 ms |
+| End-to-end | blocked card (nested JSON) | 4.0 ms | 5.9 ms |
 
-Subtracting the localhost baseline from the clean-passthrough gateway run isolates the gateway + Docker inter-container networking overhead at **~4.6 ms**, within which the detector pipeline itself contributes **~0.015 ms**, i.e. **~0.3%** of the gateway overhead. The remainder is dominated by TLS termination, mitmproxy's forwarding, and the two container hops (victim → gateway → attacker sink). Blocked-card paths are slightly faster than clean passthrough because mitmproxy returns the 403 directly instead of forwarding to the attacker sink. See `evaluation/l7_web/REPORT.md` and `evaluation/l7_web/sessions.csv` for per-scenario detail.
+The two scales differ by roughly three orders of magnitude: the detection logic itself contributes under 0.5% of the request's total round-trip time, with the remainder dominated by TLS termination, mitmproxy forwarding, and Docker's inter-container networking. The blocked-card path is slightly faster than clean passthrough because mitmproxy short-circuits the forward step once a Finding is produced, saving one hop to the attacker-side sink. See `evaluation/l7_web/REPORT.md` and `evaluation/l7_web/sessions.csv` for per-scenario detail.
 
 #### 4.2 Qualitative Analysis: Limits, Architectural Trade-offs & Defense-in-Depth
 
@@ -471,7 +474,7 @@ Academic project. Do not deploy or execute against external networks without exp
 #### 4. Documentation & test suite
 
 - **L7 detection documentation (`docs/l7-web-detection-mechanism.md`):** Authored the standalone technical reference covering the three-stage credit-card pipeline *(regex / Luhn / issuer prefix)*, the body decoder's dispatch and fallback behavior, the entropy infrastructure, and the alerting path through mitmproxy.
-- **Test suite scope (`tests/test_l7_web.py`):** Defined the Luhn edge cases to cover *(invalid checksum, non-standard lengths, Amex 15-digit, Mastercard 16-digit, Wikipedia 11-digit example, trivial 0)* and the false-positive stressors *(long random digit runs, 20-digit opaque IDs, short Luhn-valid numbers)*. The concrete test implementations are AI-generated per `AI_USE.md`.
+- **Initial unit test suite (`tests/test_l7_web.py`) & repository bootstrap:** Wrote the initial pytest suite covering Luhn edge cases, scan integration *(mixed separators, offset correctness, multiple cards)*, decoder behaviour *(nested JSON, URL-encoded multi-values, broken bodies)*, and false-positive protection (the harness Diogo later extended for the issuer-prefix and regex-pattern cases). Also set up the initial package layout *(`detection/`, `attacks/`, `evaluation/`, `tests/`)* before team-wide implementation began.
 
 #### 5. Quantitative L7 evaluation (WS D.2)
 
