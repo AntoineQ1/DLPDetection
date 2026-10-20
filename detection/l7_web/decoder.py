@@ -1,5 +1,8 @@
 import json
+import logging
 from urllib.parse import parse_qs
+
+log = logging.getLogger(__name__)
 
 
 def _normalize_content_type(content_type: str) -> str:
@@ -37,16 +40,15 @@ def decode_body(content: bytes, content_type: str) -> list[str]:
             for value in parsed.values():
                 parsed_list.extend(_flatten_scalars(value))
             return parsed_list
-
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as e:
+            log.debug("urlencoded parse failed, falling back to plain text: %s", e)
 
     if ct == "application/json":
         try:
             content_str = content.decode("utf-8", errors="replace")
             return _flatten_scalars(json.loads(content_str))
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as e:
+            log.debug("json parse failed, falling back to plain text: %s", e)
 
     # Uncomment the next 3 lines to show the fix to the gzip evasion attack:
     # import gzip as _gzip
