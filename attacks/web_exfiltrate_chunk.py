@@ -5,9 +5,6 @@ import requests
 DEFAULT_URL = "http://172.21.0.10/"
 CARD = "4111111111111111"
 
-'''
-  Explanation:
-'''
 def send_multi_request_chunking_payload(url: str, secret: str) -> None:
 
     mid = len(secret) // 2
