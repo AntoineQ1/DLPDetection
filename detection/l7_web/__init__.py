@@ -1,5 +1,3 @@
-"""L7 web-layer DLP inspection (Workstream B)."""
-
 from dataclasses import dataclass, field
 
 from detection.common.types import Severity

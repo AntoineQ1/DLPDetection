@@ -1,7 +1,3 @@
-"""Regex-based secret detection (Workstream B)."""
-
-from __future__ import annotations
-
 import re
 from typing import NamedTuple
 

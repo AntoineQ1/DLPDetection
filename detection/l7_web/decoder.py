@@ -1,11 +1,3 @@
-"""HTTP body decoder for the L7 web DLP (Workstream B).
-
-Handles application/x-www-form-urlencoded and application/json bodies;
-anything else is returned as plain text. multipart/form-data is out of scope.
-"""
-
-from __future__ import annotations
-
 import json
 from urllib.parse import parse_qs
 

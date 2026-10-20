@@ -1,12 +1,3 @@
-"""Credit-card number detection (Workstream B).
-
-Pipeline:
-    1. Regex pre-filter: 13-19 digit runs, optionally split by spaces/dashes.
-    2. `credit_card_detector(digits)`: check issuer length, prefix and Luhn checksum when the issuer uses luhn.
-"""
-
-from __future__ import annotations
-
 import re
 from typing import NamedTuple
 

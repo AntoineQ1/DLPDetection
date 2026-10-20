@@ -1,12 +1,3 @@
-"""Shannon-entropy based detection of high-entropy tokens (Workstream B).
-
-`shannon_entropy` is the shared math primitive, also reused by the covert
-channel detectors. Thresholds and how text is split into tokens stay in each
-detector.
-"""
-
-from __future__ import annotations
-
 import math
 import os
 import re
