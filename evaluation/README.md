@@ -1,33 +1,35 @@
-# DNS and ICMP detector evaluation
+# Detector evaluation
 
-The unit of evaluation is **one transfer or diagnostic sequence**, not one
-packet. The default run evaluates 100 benign and 100 malicious sessions for
-each protocol:
+The unit of evaluation is **one transfer, diagnostic sequence, or HTTP
+exchange**, not one packet or request. Two scripts drive the evaluation:
 
 ```bash
-uv run python -m evaluation.run_covert_eval
+uv run python -m evaluation.run_covert_eval   # DNS + ICMP (100+100 sessions each)
+uv run python -m evaluation.run_l7_eval       # L7 Web (14+10 sessions)
 ```
 
-`dns/sessions.csv` and `icmp/sessions.csv` are the primary results. A session
-is grouped by source, destination, and DNS apex where applicable, with a new
-session after more than 60 seconds of inactivity. A session is detected if any
-of its packets alerts. `results.csv` in each folder gives every packet's full
-payload, detector rule IDs, and complete detector messages. Both files have a
-`session_id` for joining. The session CSV shows packet IDs, a payload preview,
-the first alert message, and all rules fired during the sequence.
+`dns/sessions.csv`, `icmp/sessions.csv`, and `l7_web/sessions.csv` are the
+primary results. For DNS and ICMP a session is grouped by source, destination,
+and DNS apex where applicable, with a new session after more than 60 seconds of
+inactivity. For L7 Web a session is one HTTP scenario (one or more requests
+under a single `session_id`). A session is detected if any of its packets or
+requests alerts. `results.csv` in each folder gives every packet's or request's
+full payload, detector rule IDs, and complete detector messages. Both files
+have a `session_id` for joining.
 
-The `outcome` field in `results.csv` describes whether that **packet** alerted.
-The `outcome` in `sessions.csv` is the TP/FP/TN/FN classification of the
-**whole sequence**. Use the latter to calculate detection and false-positive
-rates. `--benign-count` and `--malicious-count` both count sessions. The
-bundled DNS tool capture and manifest contain 100 malicious sessions.
+The `outcome` field in `results.csv` describes whether that **packet or
+request** alerted. The `outcome` in `sessions.csv` is the TP/FP/TN/FN
+classification of the **whole session**. Use the latter to calculate detection
+and false-positive rates. For the covert-channel run, `--benign-count` and
+`--malicious-count` both count sessions.
 
 ## Current sample
 
-| Protocol | Benign sessions | Malicious sessions | Benign packets | Malicious packets |
+| Protocol | Benign sessions | Malicious sessions | Benign packets / requests | Malicious packets / requests |
 | --- | ---: | ---: | ---: | ---: |
 | DNS | 100 | 100 | 260 | 140 |
 | ICMP | 100 | 100 | 315 | 200 |
+| L7 Web (HTTP) | 10 | 14 | 10 | 15 |
 
 The 100 malicious ICMP sessions are split evenly between two tools, sampled with
 a fixed seed (stratified random): 50 from icmptunnel, drawn across oversized /
@@ -35,6 +37,13 @@ tiny / burst / cleartext-secret profiles so they exercise the structure, rate,
 and content rules; and 50 from Smendowski's tool (base64) for the entropy rule.
 Packet counts, sizes, send cadence, and dummy secret tokens are drawn at random
 per run. Benign packet totals therefore shift slightly between seeds.
+
+The L7 Web sample is smaller and hand-crafted on purpose. The L7 pipeline is
+deterministic per request (same input → same findings), so additional samples
+of the same attack technique add no statistical insight. Breadth of attack
+vectors is what matters, and the 14 malicious scenarios cover six credit-card
+variants, five API-token classes, and three of Diogo's evasion vectors. See
+the L7 subsection below for the full list.
 
 All file contents, text strings, and host addresses used for generated tool
 runs are dummy test data. Session inputs are deterministic and distinct. The
@@ -127,6 +136,29 @@ The earlier [iodine capture](https://github.com/Korving-F/dns-tunnel-dataset)
 is kept as `dns/iodine_sample.pcap` for reference. It contains one transfer
 sequence and is **excluded** from the current 100-session results.
 
+**L7 Web (HTTP):** No external attack tool with a published packet builder
+exists for L7 DLP in the way `zrckr/dns-tunnel` and `icmptunnel` exist for the
+covert channels; the standard literature evaluates L7 DLP against hand-crafted
+PCI / API-key samples or curated HAR dumps. The 14 malicious scenarios are
+therefore defined inline in `evaluation/run_l7_eval.py` and cover three
+categories: credit cards (6 scenarios: Visa plain, dashed, URL-encoded dashes,
+nested in JSON; Mastercard; Amex), API tokens (5 scenarios: AWS access key,
+GitHub token, OpenAI user key, JWT, Stripe test key), and the three
+WS-D.1 evasion vectors (invisible-unicode spacing, gzip compression, and
+multi-request chunking, see `docs/l7-evasion-hardening.md`). The evasion
+cases are the ones the detector is expected to miss on the baseline build;
+their patches are opt-in or architectural and tracked in that document.
+
+The scanner is called directly through the production `decode_body` +
+`scan_all` entry points (the exact same code path the mitmproxy addon
+executes on live traffic). No HTTP requests are sent by the script.
+
+To regenerate the L7 results:
+
+```bash
+uv run python -m evaluation.run_l7_eval
+```
+
 ## Connection to related research
 
 The selected generators produce the two exfiltration mechanisms this project
@@ -163,14 +195,22 @@ The papers do not validate our measured detector performance.
 
 Benign sessions are deterministic local fixtures: ordinary DNS lookups,
 service discovery, cache-busting names, and Linux/Windows/default or custom
-ICMP Echo diagnostics. They are not production traffic. The benign mix
-intentionally includes patterns that can challenge the detector, so its
-false-positive rate is specific to this sample.
+ICMP Echo diagnostics for the covert channels; normal web and API traffic
+patterns for L7 (form submissions, UUIDs, SHA-256 hashes, UPS tracking
+numbers, random 16-digit order IDs, IPv4 pairs, lorem ipsum, JSON API
+responses). They are not production traffic. The benign mix intentionally
+includes patterns that can challenge the detector — for L7 specifically, the
+long hex and digit strings and the random 16-digit ID are chosen to stress
+the Luhn pre-filter and the entropy threshold without being real secrets.
+Each protocol's false-positive rate is specific to its own sample.
 
 Replay calls the production packet parsers and detection functions, with
 fresh detector state for each label group. It does not test live sniffing,
-routing, dropped packets, or gateway blocking. The Docker lab had no running
-containers when the evaluation was performed.
+routing, dropped packets, or gateway blocking (the one exception is L7
+end-to-end latency, which is sampled separately via `curl` through the full
+Docker + mitmproxy stack and reported in the main `README.md` section 4.1).
+The Docker lab had no running containers when the covert-channel evaluation
+was performed.
 
 ## Peer review and the detection / false-positive tradeoff
 
