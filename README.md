@@ -190,16 +190,17 @@ The detector identified 12 of the 14 malicious sessions (85.7%) and flagged 0 of
 | `visa_chunked` (multi-request split, architectural limit) | malicious | 1 | 1 FN |
 | Normal web/API traffic (10 scenarios) | benign | 10 | 10 TN |
 
-Latency was measured two ways. The detector pipeline (`decode_body` + `scan_all`) is timed in isolation with `time.perf_counter_ns` across 100 iterations per request. End-to-end latency is sampled from the victim container through the full mitmproxy + Docker stack with 10 `curl` runs per scenario (warm-up excluded).
+Latency was measured three ways to separate the detector's own cost from Docker and gateway overhead. The detector pipeline (`decode_body` + `scan_all`) is timed in isolation with `time.perf_counter_ns` across 100 iterations per request. End-to-end latency is sampled from the victim container through the full mitmproxy + Docker stack with 10 `curl` runs per scenario (warm-up excluded). A localhost baseline is sampled by running a Python `http.server` inside the victim container and `curl`-ing `127.0.0.1`, which bypasses both the gateway and Docker's inter-container networking.
 
 | Measurement | Scenario | Median | Max |
 | --- | --- | ---: | ---: |
 | Pipeline-isolated | all requests | 15 μs | 45 μs |
-| End-to-end | clean passthrough | 5.2 ms | 7.9 ms |
-| End-to-end | blocked card (form) | 3.8 ms | 5.2 ms |
-| End-to-end | blocked card (nested JSON) | 4.0 ms | 5.9 ms |
+| Localhost baseline (no gateway, no inter-container net) | clean passthrough | 0.57 ms | 1.4 ms |
+| End-to-end via gateway | clean passthrough | 5.2 ms | 7.9 ms |
+| End-to-end via gateway | blocked card (form) | 3.8 ms | 5.2 ms |
+| End-to-end via gateway | blocked card (nested JSON) | 4.0 ms | 5.9 ms |
 
-The detector pipeline contributes under 0.5% of a request's total round-trip time; TLS termination, mitmproxy forwarding, and Docker's inter-container networking dominate the rest. Blocked-card paths are slightly faster than clean passthrough because mitmproxy returns the 403 directly instead of forwarding to the attacker sink. See `evaluation/l7_web/REPORT.md` and `evaluation/l7_web/sessions.csv` for per-scenario detail.
+Subtracting the localhost baseline from the clean-passthrough gateway run isolates the gateway + Docker inter-container networking overhead at **~4.6 ms**, within which the detector pipeline itself contributes **~0.015 ms**, i.e. **~0.3%** of the gateway overhead. The remainder is dominated by TLS termination, mitmproxy's forwarding, and the two container hops (victim → gateway → attacker sink). Blocked-card paths are slightly faster than clean passthrough because mitmproxy returns the 403 directly instead of forwarding to the attacker sink. See `evaluation/l7_web/REPORT.md` and `evaluation/l7_web/sessions.csv` for per-scenario detail.
 
 #### 4.2 Qualitative Analysis: Limits, Architectural Trade-offs & Defense-in-Depth
 
