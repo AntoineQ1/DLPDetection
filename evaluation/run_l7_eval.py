@@ -1,19 +1,11 @@
-"""Reproduce the offline L7 Web DLP session evaluation.
-
-HTTP request bodies come from a hand-crafted corpus of 14 malicious and 10
-benign scenarios covering credit cards, API tokens, known evasions, and
-representative normal traffic. No requests are transmitted by this script;
-the detector pipeline (`decode_body` + `scan_all`) is called directly.
-"""
-
-from __future__ import annotations
+"""Offline L7 session evaluation: pushes 14 malicious + 10 benign scenarios through decode_body + scan_all."""
 
 import csv
 import gzip
 import statistics
 import time
-from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from detection.l7_web import scan_all
 from detection.l7_web.decoder import decode_body
@@ -56,27 +48,24 @@ PREVIEW_CHARS = 60
 
 # Payload corpus
 
-@dataclass
-class Request:
+class Request(NamedTuple):
     content: bytes
     content_type: str
 
-
-@dataclass
-class Scenario:
+class Scenario(NamedTuple):
     session_id: str
     label: str
     source: str
     scenario: str
-    requests: list[Request]
+    requests: list
 
 
-def _gzip_payload(secret: bytes) -> bytes:
+def gzip_payload(secret: bytes) -> bytes:
     return gzip.compress(secret)
 
 
-def _zwsp_card(digits: str) -> bytes:
-    return ("card=" + "​".join(digits)).encode("utf-8")
+def zwsp_card(digits: str) -> bytes:
+    return ("card=" + "\u200b".join(digits)).encode("utf-8")
 
 
 MALICIOUS: list[Scenario] = [
@@ -106,9 +95,9 @@ MALICIOUS: list[Scenario] = [
         [Request(b'{"user":{"payment":{"cc":"4111-1111-1111-1111"}}}', "application/json")],
     ),
     Scenario(
-            "mal_visa_zwsp", "malicious", "handcrafted", "visa_with_zero_width_spaces",
-            [Request(_zwsp_card("4111111111111111"), "application/x-www-form-urlencoded")],
-        ),
+        "mal_visa_zwsp", "malicious", "handcrafted", "visa_with_zero_width_spaces",
+        [Request(zwsp_card("4111111111111111"), "application/x-www-form-urlencoded")],
+    ),
     # API keys / tokens
     Scenario(
         "mal_aws_access_key", "malicious", "handcrafted", "aws_access_key",
@@ -134,7 +123,7 @@ MALICIOUS: list[Scenario] = [
     # web exfiltration via gzip compression
     Scenario(
         "mal_visa_gzipped", "malicious", "handcrafted", "visa_gzipped",
-        [Request(_gzip_payload(b"4111111111111111"), "text/plain")],
+        [Request(gzip_payload(b"4111111111111111"), "text/plain")],
     ),
     # multi-request chunking
     Scenario(
@@ -196,29 +185,29 @@ BENIGN: list[Scenario] = [
 
 # scan helpers
 
-def _scan_request(req: Request):
+def scan_request(req: Request):
     findings = []
     for value in decode_body(req.content, req.content_type):
         findings.extend(scan_all(value))
     return findings
 
 
-def _measure_latency_us(req: Request, iterations: int) -> tuple[int, int]:
-    times_us: list[float] = []
+def measure_latency_us(req: Request, iterations: int) -> tuple[int, int]:
+    times: list[float] = []
     for _ in range(iterations):
         start = time.perf_counter_ns()
         for value in decode_body(req.content, req.content_type):
             scan_all(value)
-        times_us.append((time.perf_counter_ns() - start) / 1000)
-    median_us = int(statistics.median(times_us))
-    if len(times_us) >= 20:
-        p95_us = int(statistics.quantiles(times_us, n=20)[18])
+        times.append((time.perf_counter_ns() - start) / 1000)
+    median = int(statistics.median(times))
+    if len(times) >= 20:
+        p95 = int(statistics.quantiles(times, n=20)[18])
     else:
-        p95_us = int(max(times_us))
-    return median_us, p95_us
+        p95 = int(max(times))
+    return median, p95
 
 
-def _classify(label: str, detected: bool) -> str:
+def classify(label: str, detected: bool) -> str:
     if label == "malicious":
         if detected:
             return "TP"
@@ -228,10 +217,10 @@ def _classify(label: str, detected: bool) -> str:
         if detected:
             return "FP"
         else:
-            return "TN"    
+            return "TN"
 
 
-def _preview(content: bytes) -> str:
+def preview(content: bytes) -> str:
     text = content.decode("utf-8", errors="replace")
     text = text.replace("\n", " ").replace("\r", " ")
 
@@ -241,20 +230,20 @@ def _preview(content: bytes) -> str:
         return text
 
 
-def _summarize(findings) -> str:
+def summarize(findings) -> str:
     if not findings:
         return ""
     else:
         return " | ".join(f"{f.rule_id}:{str(f.matched)[:20]}" for f in findings[:3])
 
 
-def _run_scenario(scenario: Scenario) -> tuple[list[dict], dict]:
+def run_scenario(scenario: Scenario) -> tuple[list[dict], dict]:
     request_rows: list[dict] = []
     session_findings = []
     session_latency_sum = 0
     for idx, req in enumerate(scenario.requests, start=1):
-        findings = _scan_request(req)
-        median_us, p95_us = _measure_latency_us(req, LATENCY_ITERATIONS)
+        findings = scan_request(req)
+        median_us, p95_us = measure_latency_us(req, LATENCY_ITERATIONS)
         detected = bool(findings)
         request_rows.append({
             "id": f"{scenario.session_id}_req{idx}",
@@ -263,11 +252,11 @@ def _run_scenario(scenario: Scenario) -> tuple[list[dict], dict]:
             "source": scenario.source,
             "scenario": scenario.scenario,
             "content_type": req.content_type,
-            "payload_preview": _preview(req.content),
+            "payload_preview": preview(req.content),
             "detected": detected,
-            "outcome": _classify(scenario.label, detected),
+            "outcome": classify(scenario.label, detected),
             "rule_ids": "|".join(sorted({f.rule_id for f in findings})),
-            "detector_message": _summarize(findings),
+            "detector_message": summarize(findings),
             "latency_us_median": median_us,
             "latency_us_p95": p95_us,
         })
@@ -282,10 +271,10 @@ def _run_scenario(scenario: Scenario) -> tuple[list[dict], dict]:
         "request_count": len(scenario.requests),
         "alerted_request_count": sum(1 for r in request_rows if r["detected"]),
         "detected": session_detected,
-        "outcome": _classify(scenario.label, session_detected),
+        "outcome": classify(scenario.label, session_detected),
         "rule_ids": "|".join(sorted({f.rule_id for f in session_findings})),
-        "payload_preview": _preview(scenario.requests[0].content),
-        "detector_message": _summarize(session_findings),
+        "payload_preview": preview(scenario.requests[0].content),
+        "detector_message": summarize(session_findings),
         "total_latency_us_median": session_latency_sum,
     }
     return request_rows, session_row
@@ -293,21 +282,21 @@ def _run_scenario(scenario: Scenario) -> tuple[list[dict], dict]:
 
 # output writers
 
-def _write_csv(path: Path, fields: list[str], rows: list[dict]) -> None:
+def write_csv(path: Path, fields: list[str], rows: list[dict]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
 
 
-def _write_report(path: Path, sessions: list[dict], requests: list[dict]) -> None:
+def write_report(path: Path, sessions: list[dict], requests: list[dict]) -> None:
     tp = sum(1 for s in sessions if s["outcome"] == "TP")
     fn = sum(1 for s in sessions if s["outcome"] == "FN")
     fp = sum(1 for s in sessions if s["outcome"] == "FP")
     tn = sum(1 for s in sessions if s["outcome"] == "TN")
     malicious_total = tp + fn
     benign_total = fp + tn
-    
+
     if malicious_total:
         tpr = (tp / malicious_total * 100)
     else:
@@ -324,10 +313,10 @@ def _write_report(path: Path, sessions: list[dict], requests: list[dict]) -> Non
 
     latencies_us = [r["latency_us_median"] for r in requests]
     median_us = int(statistics.median(latencies_us))
-    p95_us = (
-        int(statistics.quantiles(latencies_us, n=20)[18])
-        if len(latencies_us) >= 20 else int(max(latencies_us))
-    )
+    if len(latencies_us) >= 20:
+        p95_us = int(statistics.quantiles(latencies_us, n=20)[18])
+    else:
+        p95_us = int(max(latencies_us))
 
     scenarios = sorted({(r["scenario"], r["label"], r["outcome"]) for r in sessions})
 
@@ -379,13 +368,13 @@ def main() -> None:
     all_requests: list[dict] = []
     all_sessions: list[dict] = []
     for scenario in MALICIOUS + BENIGN:
-        request_rows, session_row = _run_scenario(scenario)
+        request_rows, session_row = run_scenario(scenario)
         all_requests.extend(request_rows)
         all_sessions.append(session_row)
 
-    _write_csv(OUTPUT_DIR / "results.csv", REQUEST_FIELDS, all_requests)
-    _write_csv(OUTPUT_DIR / "sessions.csv", SESSION_FIELDS, all_sessions)
-    _write_report(OUTPUT_DIR / "REPORT.md", all_sessions, all_requests)
+    write_csv(OUTPUT_DIR / "results.csv", REQUEST_FIELDS, all_requests)
+    write_csv(OUTPUT_DIR / "sessions.csv", SESSION_FIELDS, all_sessions)
+    write_report(OUTPUT_DIR / "REPORT.md", all_sessions, all_requests)
 
     tp = sum(1 for s in all_sessions if s["outcome"] == "TP")
     fn = sum(1 for s in all_sessions if s["outcome"] == "FN")

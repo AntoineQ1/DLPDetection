@@ -51,7 +51,7 @@ Measured with `time.perf_counter_ns` over 100 iterations per request.
 | Metric | Value |
 | --- | ---: |
 | Median per-request latency | 11 us |
-| p95 per-request latency | 29 us |
+| p95 per-request latency | 31 us |
 | Requests measured | 25 |
 
 End-to-end latency through the full mitmproxy stack is measured out-of-band (victim container -> gateway -> attacker sink via `curl`) and reported in the main `README.md` section 4.1 alongside the pipeline-isolated numbers above.

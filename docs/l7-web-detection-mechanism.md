@@ -2,17 +2,15 @@
 
 ## 1. Introduction & Background
 
-Most data that leaves a company today travels over HTTP(S). SaaS APIs, cloud storage buckets, chat and ticketing systems all expect credentials, personal data and payment details in request bodies. That makes the HTTP channel one of the first things a DLP gateway needs to inspect.
+The L7 engine runs inside mitmproxy and scans every outbound HTTP(S) request for credit cards, API tokens, and high-entropy strings. If any rule fires, the request is logged and dropped with a 403.
 
-The L7 part of this gateway sits inside mitmproxy and runs on every outbound request: the body gets decoded, the result is scanned by three detectors (regex patterns, Luhn credit cards, high-entropy tokens), and anything that trips a rule is logged - and the request is dropped with a 403 when necessary.
-
-Because the traffic is going through HTTPS, mitmproxy terminates the TLS using its own CA certificate. The victim container trusts this CA at build time, which is the setup you would get in a corporate environment where IT pushes a company CA to every laptop. For non-TLS traffic, the mechanism is identical, just without the certificate dance. The detection rules themselves are not specific to our lab: the Luhn checksum has been around since 1954, the regex patterns were derived from documentation that already existed (and projects like GitLeaks already implement them, even though we didn't reuse directly the ones they use), and the entropy heuristic goes back to *Shannon*'s original 1948 paper.
+mitmproxy terminates TLS with its own CA certificate. The victim container trusts this CA at build time, matching the enterprise setup where IT pushes a corporate CA to every laptop. For non-TLS traffic the pipeline is identical, minus the TLS step. The techniques themselves are standard: Luhn's checksum from 1954, regex patterns reused from *Gitleaks* and *Trufflehog*, Shannon entropy from 1948.
 
 ## 2. Threat Model
 
 - **Attacker:** An insider or a compromised host inside the internal network `172.20.0.0/24`. The attacker wants to send credit card numbers, API keys or similar secrets to an external endpoint at `172.21.0.10`.
 - **Evasion:** The attacker will not type `card=4111 1111 1111 1111` into a form if a simple keyword filter can catch it. More realistic payloads use URL-encoded separators (`4111%2D1111...`), hide the value deep inside a JSON object, or split it across HTTP header values.
-- **Monitoring posture:** All traffic from the victim is routed through the gateway container. mitmproxy intercepts, decrypts and inspects every request before it reaches the outside world (and the attacker's sink). If any detector produces a finding, the request never leaves the gateway.
+- **Monitoring posture:** All traffic from the victim is routed through the gateway container. mitmproxy intercepts, decrypts and inspects every request before it reaches the outside world (and the attacker). If any detector produces a finding, the request never leaves the gateway.
 
 ## 3. Detection Architecture
 
@@ -63,7 +61,7 @@ mitmproxy hands us a `flow.request.content` field as raw bytes. A naive `bytes.d
 - `application/json` is parsed with `json.loads` and recursed through: dictionaries get walked on their values, lists get walked element by element, scalars (strings, numbers, booleans) are added to the result. `None` is dropped.
 - Anything else, and anything that fails to parse (broken JSON, invalid bytes), falls back to a plain UTF-8 decode of the raw body. A broken request should never bring the gateway down.
 
-***Multipart form data** is intentionally **out of scope**. It is uncommon in APIs and the parsing is more involved than the time budget of this project allowed.*
+*Multipart form data is out of scope.*
 
 ### 3.2 Structured credential detection (`regex_rules`)
 
@@ -75,19 +73,21 @@ The concrete patterns were derived independently from documentation, blogs and o
 
 ### 3.3 Credit-card detection (`luhn` + issuer prefix)
 
-This is the detector Jonas spent the most time on, and the one that most clearly shows the problem with a one-shot regex. A 16-digit number that passes Luhn is not necessarily a credit card. About 10% of random 16-digit strings happen to satisfy the checksum, which means a tracking number, an order ID or a hash can trigger a false alarm. Hence, the pipeline has three stages.
+This is the detector I spent the most time on. A 16-digit number that passes Luhn is not necessarily a credit card (about 10% of random 16-digit strings satisfy the checksum), so the pipeline has three stages:
 
-1. **Regex pre-filter.** The pattern `(?<!\d)(?:\d[ ._-]?){11,18}\d(?!\d)` finds runs of 12 to 19 digits that may be separated by single spaces, dots, underscores or dashes. The negative lookbehind and lookahead stop it from matching inside a longer digit run, which prevents false positives on long hashes or IDs.
-2. **Luhn checksum.** Jonas implemented this one from scratch following the Wikipedia description. Reverse the digits, double every second one, subtract 9 if the result exceeds 9, sum everything up, check divisibility by 10. This is the exact validation banks use when a cashier types a card number by hand.
-3. **Issuer prefix and length.** A valid Luhn number can still be nonsense. Every real issuer publishes a BIN range (first 2 to 8 digits) and a set of allowed lengths. Visa starts with 4 and comes in 13, 16 or 19 digits. Mastercard starts with 2221-2720 or 51-55, always 16 digits. Amex starts with 34 or 37, always 15. The `ISSUERS` table lists around 35 issuers from the Wikipedia payment card number article. Only candidates whose prefix lands in one of these ranges and whose length matches that issuer survive. Diogo added this stage after we saw the FP rate on raw Luhn.
+- **Regex pre-filter:** `(?<!\d)(?:\d[ ._-]?){11,18}\d(?!\d)` 12 to 19 digits with optional space/dot/underscore/dash separators. Lookarounds prevent matches inside longer digit runs.
+- **Luhn checksum:** Implementation from scratch following the Wikipedia description.
+- **Issuer prefix and length:** candidates are checked against ~36 real issuers (Visa, Mastercard, Amex, Maestro, JCB, UnionPay, ...) by BIN prefix range and allowed lengths. Diogo added this stage after the FP rate on raw Luhn was too high.
 
-If all three stages pass, the finding carries the matched substring, its position in the body, the number of digits, and the matched issuer name as metadata.
+If all three stages pass, the finding carries the matched substring, its offset in the body, the digit count, and the matched issuer name as metadata.
 
 ### 3.4 High-entropy tokens (`entropy`)
 
 Not every secret has a known shape. Internal tokens, custom API keys, random session identifiers all look like base64 or hex strings of some length. Regex cannot match "a string of 32 characters with high entropy" because entropy is not a regular property.
 
-The module exports a `shannon_entropy(text)` function that computes bits per character. The threshold is set to 4.7 bits since English text maximum entropy sits around 4.76. For around 62 symbol alphabet (0-9a-zA-Z and punctuation present in the computed regexes), the maximum entropy is log_2(62) = 5.95 bits. The detector isolates at least 16 characters and flags any possible candidate that gets a score above 4.7. This limit can be changed according to the user needs by changing the global variable ENTROPY_THRESHOLD and ENTROPY_MIN_CHARS.
+The module exports a `shannon_entropy(text)` function that computes bits per character. The planned detector tokenizes the input and emits a Finding for every token with entropy over around 4.5 bits per char at length ≥ 20.
+
+**Status:** `shannon_entropy` is implemented but the `scan()` function currently returns an empty list. The thresholds and the tokenization need to be tuned against the FPR benchmark before this detector is turned on. Covert channel detection (DNS workstream) also uses `shannon_entropy`, which is why the function is factored out.
 
 ### 3.5 Alerting and blocking (`addon.py`)
 
@@ -109,4 +109,4 @@ In addition, the `tests/test_l7_web.py` unit test suite covers:
 - False-positive protection on long random digit runs, 20-digit opaque IDs, and short numbers that happen to satisfy Luhn.
 - The decoder itself: content-type normalization, nested JSON walk, URL-encoded multi-values, broken bodies.
 
-The quantitative FPR / TPR evaluation across these cases is being developed as part of Workstream D together with Sofia.
+Quantitative FPR / TPR / latency results for these scenarios are in `evaluation/l7_web/REPORT.md` and the main `README.md` section 4.1.
