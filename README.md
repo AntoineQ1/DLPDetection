@@ -366,11 +366,7 @@ Academic project. Do not deploy or execute against external networks without exp
 - Postel, J. (1981). *Internet Control Message Protocol*. RFC 792. IETF. [https://www.rfc-editor.org/rfc/rfc792](https://www.rfc-editor.org/rfc/rfc792)
 - Mockapetris, P. (1987). *Domain Names - Implementation and Specification*. RFC 1035. IETF. [https://www.rfc-editor.org/rfc/rfc1035](https://www.rfc-editor.org/rfc/rfc1035)
 - Fielding, R., Nottingham, M., & Reschke, J. (2022). *HTTP Semantics*. RFC 9110. IETF. [https://www.rfc-editor.org/rfc/rfc9110](https://www.rfc-editor.org/rfc/rfc9110)
-- Chen, S. et al. (2021). A study of DNS covert-channel detection. Computers & Security 104, 102095. https://doi.org/10.1016/j.cose.2020.102095
-- Zheng et al. (2025). Evaluation of DNS tunnel tools and reproducible sample generation. https://www.joca.cn/EN/10.11772/j.issn.1001-9081.2024070972
-- Tu, L. et al. (2022). ICMPTend: ICMP covert-tunnel detection using SVM. Computers, Materials & Continua 73(1). https://doi.org/10.32604/cmc.2022.022540
-- Fokin, D. and Yevdokymenko, M. (2025). An Overview of Covert Channels in Software Defined Networks. IEEE IDAACS. https://doi.org/10.1109/IDAACS68557.2025.11322109
-- Tools: zrckr/dns-tunnel; the iodine capture from Korving-F/dns-tunnel-dataset; DhavalKapil/icmptunnel; and the Smendowski hidden-communication-using-covert-channels project. todo(add links)
+
 
 ### 2. Workstream B: L7 Web DLP & Content Inspection
 
@@ -389,11 +385,14 @@ Academic project. Do not deploy or execute against external networks without exp
 ### 3. Workstream C: ICMP Covert Channel Detection
 
 - Sayadi, A., Lehsaini, M., & Bitam, S. (2017). *Detection of Covert Channels Over ICMP Protocol*. In 2017 IEEE/ACS 14th International Conference on Computer Systems and Applications (AICCSA) (pp. 573–579). IEEE.
-- *[Placeholder: Add any specific sources or papers used by Antoine]*
+- Tu, L. et al. (2022). ICMPTend: ICMP covert-tunnel detection using SVM. Computers, Materials & Continua 73(1). https://doi.org/10.32604/cmc.2022.022540
+- Fokin, D. and Yevdokymenko, M. (2025). An Overview of Covert Channels in Software Defined Networks. IEEE IDAACS. https://doi.org/10.1109/IDAACS68557.2025.11322109
 
 ### 4. Workstream C: DNS Covert Channel Detection
 
-- *[Placeholder: Add any specific sources or papers used by Sofia]*
+- Chen, S. et al. (2021). A study of DNS covert-channel detection. Computers & Security 104, 102095. https://doi.org/10.1016/j.cose.2020.102095
+- Zheng et al. (2025). Evaluation of DNS tunnel tools and reproducible sample generation. https://www.joca.cn/EN/10.11772/j.issn.1001-9081.2024070972
+- Tools: zrckr/dns-tunnel; the iodine capture from Korving-F/dns-tunnel-dataset; DhavalKapil/icmptunnel; and the Smendowski hidden-communication-using-covert-channels project. 
 
 ## Individual contributions
 
