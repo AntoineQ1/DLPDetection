@@ -93,7 +93,7 @@ version) among the traffic sources in the
 dummy-file bytes inside IPv4/UDP datagrams and calls the tool's original C
 `send_icmp_packet`; an offline adapter intercepts `sendto` and writes the bytes
 to a PCAP, opening no sockets. Four profiles: **oversized** (random large files ->
-`icmp_oversized_payload`), **tiny** (random ≤64 B payloads -> `icmp_non_standard_size`),
+`icmp_oversized_payload`), **tiny** (random <=64 B payloads -> `icmp_non_standard_size`),
 **burst** (a random >4-chunk transfer sent sub-second -> `icmp_high_frequency`),
 and **secret** (a Luhn-valid dummy card plus a randomly chosen dummy API token,
 left readable by the raw framing -> `icmp_sensitive_data_luhn_cc` and token
