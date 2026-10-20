@@ -59,8 +59,9 @@ The DLP gateway is deployed as a dual-homed bridge separating the *trusted enter
 
 *(Full network scripts and container configurations are documented in `docs/architecture.md`).*
 
-### 2. Workstream B: Inline L7 Web DLP Engine
+### 2. Workstream B & D.1: Inline L7 Web DLP Engine & Evasion Hardening
 
+#### 2.1 L7 Web Detection (WS B)  
 The L7 engine runs inside mitmproxy and checks every outbound HTTP(S) request before it is forwarded. Each request goes through three stages: collect scannable text, scan it, and decide whether to forward or block.
 
 - **Stage 1 - Input collection:** The addon scans the URL path, every query parameter, all request headers (including `Cookie`, `Authorization`, and any custom headers) and the request body. Bodies go through `decode_body` which handles `application/x-www-form-urlencoded` (percent-escapes decoded, so `card=4111%2D1111...` becomes a flat PAN), `application/json` (recursed through to flatten scalar values out of nested objects), or any other type as plain UTF-8. Malformed input falls back to UTF-8 instead of crashing. Invisible characters (zero-width space etc.) are stripped before scanning so attackers cannot hide separators inside digit runs.
@@ -68,9 +69,31 @@ The L7 engine runs inside mitmproxy and checks every outbound HTTP(S) request be
 - **Stage 2 - Multi-detector scan (`scan_all`):** Each collected string goes through three detectors that share a common `Finding` output:
   - `regex_rules`: Patterns for well-known credentials: AWS keys, GitHub tokens, OpenAI / Anthropic / Google API keys, JWTs, Stripe keys, Cloudflare tokens. Patterns were derived from official documentation and other blogs and forum discussions about them (mentioned in `RESOURCES.md`).
   - `luhn`: Credit-card detection in three steps. A regex finds 12–19 digit runs with optional spaces, dots, dashes or underscores. Each candidate is checked against the Luhn checksum. Luhn-valid numbers are then matched to real issuers (Visa, Mastercard, Amex, Maestro, JCB, UnionPay, ...) by BIN prefix and length, which drops numbers that are Luhn-valid but not actual cards.
-  - `entropy`: Shannon entropy per character over whitespace-separated tokens. Tokens above the threshold are flagged. The threshold for L7 is set to 4.7 bits, since natural english is usually between 2.14 and 4.76. This way it will detect some false positives in L7 but that was considered better than letting a "normal" entropy secret pass. The `shannon_entropy` function is also used by the DNS detector. DNS detector has a different threshold. 
+  - `entropy`: Shannon entropy per character over whitespace-separated tokens. Tokens above the threshold are flagged. The threshold for L7 is set to 4.7 bits, since natural English is usually between 2.14 and 4.76. This way it will detect some false positives in L7 but that was considered better than letting a "normal" entropy secret leak. The `shannon_entropy` function is also used by the DNS detector. DNS detector has a different threshold. 
 
 - **Stage 3 - Alert and block:** On any finding the addon logs a `[DLP-ALERT]` through the shared logger. Matched substrings pass through `detection.common.mask.mask()` so a card number appears as `4111********1111` in the log, not as cleartext. The addon then sets `flow.response` to a 403, which stops mitmproxy from forwarding. The victim sees the 403, the attacker sink sees nothing.
+
+#### 2.2 L7 Web Evasion Analysis & Hardening (WS D.1)
+
+The engine trusts the declared content type of the message and inspects each request in isolation, which is exploitable.
+
+##### Evasion & Hardening Summary
+
+| # | Vector | Technique & Target Rule | Category | Status |
+| --- | --- | --- | --- | --- |
+| **1** | **Gzip Compression** | Sending a gzip-compressed body with `Content-type: text/plain` header bypasses every check | Implementation Gap | **Patched** (uncomment the commented lines of decoder.py) |
+| **2** | **Multi-Request Chunking** | Splitting credit-card (or other secret) across multiple requests. None of them satisfies Luhn or any regex. | Architectural Limit | *Documented Limitation* |
+
+##### Key Vulnerabilities & Applied Patches
+
+- **Gzip Compression (Patched - `decoder.py` lines 54-56):**
+  - *Bypass:*   Gzip is a compression algorithm that turns readable text into compact bytes (Example:  "4111111111111111" -> \x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff31D\x05\x00\x90\xd5Bf\x10\x00\x00\x00).  
+  `decoder.py` inspects requests looking for secret patterns. It handles application/x-www-form-urlencoded and application/json bodies meaning those fields would be decoded and analysed. Any other fields are considered to be text and analysed.
+  But now we are sending a secret compressed in a field that will be considered as text. It will not be modified by the decoding process of the DLP gateway and it will be analysed as plain text. Since the text are compressed bytes, no pattern will be recognized.
+  - *Hardening:* decoder.py is reading the request body and converting it into text before scanning. If we add a few lines of code to the decoder.py checking for gzip magic bytes (a signature that identifies gzip files), we prevent this kind of attacks. 
+
+- **Fundamental Bounds & Trade-offs:**
+  - *Multi-Request Chunking:* Splitting a secret across two requests makes the secret fail Luhn, Entropy and Regex validation, because the gateway inspects individual requests. Fix would require state tracking across requests, which is out of scope for this project. Either way, the attack is demonstrated in `attacks/web_exfiltrate_chunk.py`, since it was considered relevant, due to the fact that even a stateful system would remain vulnerable to slow chunking and other methods.
 
 *(Full design and WS-D.1 evasion cases are in `docs/l7-web-detection-mechanism.md`.)*
 
