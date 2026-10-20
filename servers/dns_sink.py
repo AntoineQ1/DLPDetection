@@ -1,16 +1,3 @@
-"""DNS sink for the covert-channel lab (Workstream C fixture).
-
-Runs on the *attacker* container. Listens on UDP/53, parses incoming queries
-produced by attacks/dns_exfiltrate.py, strips the base domain, reassembles the
-chunked payload, and answers with a benign A record so the client does not hang.
-
-It exists only to confirm end-to-end that exfiltration *would* have succeeded if
-the gateway had not blocked it — i.e. the ground truth for the detection metrics.
-Standard library only.
-"""
-
-from __future__ import annotations
-
 import argparse
 import base64
 import socket
