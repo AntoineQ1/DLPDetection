@@ -11,6 +11,7 @@ import argparse
 import csv
 import json
 import random
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -157,13 +158,34 @@ def dns_tool_packets(path: Path, manifest_path: Path, count: int):
             raise ValueError(f"packet count mismatch for tool run {row['run_id']}")
 
 
-def eval_dns(benign_count: int, malicious_count: int, pcap: Path, manifest_path: Path) -> list[dict]:
+def dns_iodine_packets(path: Path):
+    """Replay the bundled iodine capture as one additional real-tool malicious session.
+
+    This is a single recorded transfer from a second, independent DNS-tunnel tool
+    (iodine), counted as one of the malicious sessions alongside the seeded
+    zrckr/dns-tunnel runs.
+    """
+    with PcapReader(str(path)) as capture:
+        for packet in capture:
+            query = parse_dns_query(packet)
+            if query is None:
+                continue
+            yield packet, "iodine_reference", float(packet.time)
+
+
+def eval_dns(benign_count: int, malicious_count: int, pcap: Path, manifest_path: Path,
+             iodine_pcap: Path) -> list[dict]:
     rows = []
-    for label, source, packets in (
-        ("benign", "synthetic_dns", dns_benign_packets(benign_count)),
-        ("malicious", "zrckr_dns_tunnel", dns_tool_packets(pcap, manifest_path, malicious_count)),
+    # The malicious set is (malicious_count - 1) seeded zrckr/dns-tunnel runs plus
+    # one recorded iodine transfer, so a second real tool is represented without
+    # changing the overall malicious session count. Each stream gets fresh
+    # detector state.
+    for label, source, detector, packets in (
+        ("benign", "synthetic_dns", DnsTunnelDetector(), dns_benign_packets(benign_count)),
+        ("malicious", "zrckr_dns_tunnel", DnsTunnelDetector(),
+         dns_tool_packets(pcap, manifest_path, malicious_count - 1)),
+        ("malicious", "iodine", DnsTunnelDetector(), dns_iodine_packets(iodine_pcap)),
     ):
-        detector = DnsTunnelDetector()
         for packet, scenario, timestamp in packets:
             query = parse_dns_query(packet)
             assert query is not None
@@ -196,7 +218,18 @@ def icmp_benign_packets(count: int):
     for session_index in range(count):
         kind = rng.choices(BENIGN_KINDS, weights=BENIGN_KIND_WEIGHTS)[0]
         if kind == "linux_default_ping":
-            payload = (session_index + 1).to_bytes(8, "little") + b"\0" * 8 + LINUX_PING_PATTERN
+            # A real Linux ping's timeval is "now" -- is_valid_linux_timestamp
+            # (added by issue #11's fix) rejects anything else as stale, so a
+            # fabricated tv_sec here would misclassify a genuinely benign ping
+            # as icmp_abnormal_pattern.
+            now = time.time()
+            tv_sec = int(now)
+            tv_usec = int((now - tv_sec) * 1_000_000)
+            payload = (
+                tv_sec.to_bytes(8, "little", signed=True)
+                + tv_usec.to_bytes(8, "little", signed=True)
+                + LINUX_PING_PATTERN
+            )
             scenario = "linux_default_ping"
         elif kind == "windows_default_ping":
             payload = WINDOWS_PING_PAYLOAD
@@ -354,6 +387,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dns-pcap", type=Path, default=ROOT / "dns" / "tool_sessions.pcap")
     parser.add_argument("--dns-manifest", type=Path, default=ROOT / "dns" / "tool_sessions_manifest.csv")
+    parser.add_argument("--dns-iodine-pcap", type=Path, default=ROOT / "dns" / "iodine_sample.pcap")
     parser.add_argument("--icmp-pcap", type=Path, default=ROOT / "icmp" / "icmptunnel_sessions.pcap")
     parser.add_argument("--icmp-manifest", type=Path, default=ROOT / "icmp" / "icmptunnel_manifest.csv")
     parser.add_argument("--icmp-smendowski-pcap", type=Path, default=ROOT / "icmp" / "smendowski_sessions.pcap")
@@ -363,7 +397,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.benign_count < 1 or args.malicious_count < 1:
         parser.error("session counts must be positive")
-    dns_rows = eval_dns(args.benign_count, args.malicious_count, args.dns_pcap, args.dns_manifest)
+    dns_rows = eval_dns(args.benign_count, args.malicious_count, args.dns_pcap, args.dns_manifest,
+                        args.dns_iodine_pcap)
     icmp_rows = eval_icmp(
         args.benign_count, args.malicious_count,
         args.icmp_pcap, args.icmp_manifest,
