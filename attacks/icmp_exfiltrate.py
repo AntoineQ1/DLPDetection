@@ -25,6 +25,7 @@ def send_oversized(target: str, data: str) -> None:
         scenario_mode="Oversized Frame Exfiltration",
         scenario_description="Send large payload exceeding OS default size (>64B)",
         expected_alert_identifier="icmp_oversized_payload (HIGH severity)",
+        channel_label="ICMP Covert Channel",
     )
 
     payload = data.encode("utf-8")
@@ -44,6 +45,7 @@ def send_sensitive(target: str, data: str) -> None:
         scenario_mode="Sensitive Cleartext Exfiltration",
         scenario_description="Unencrypted credit card / secret inside ICMP Echo",
         expected_alert_identifier="icmp_sensitive_data_* (CRITICAL/HIGH via L7 scanner)",
+        channel_label="ICMP Covert Channel",
     )
 
     payload = data.encode("utf-8")
@@ -63,6 +65,7 @@ def send_burst(target: str, count: int, delay: float) -> None:
         scenario_mode="High-Frequency Burst Flooding",
         scenario_description=f"Send {count} packets at {1 / delay:.0f} pkt/s (>4 pkt/s limit)",
         expected_alert_identifier="icmp_high_frequency (Rate Limiting)",
+        channel_label="ICMP Covert Channel",
     )
 
     with BurstProgressTracker(

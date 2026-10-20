@@ -110,6 +110,7 @@ def render_attack_banner(
     scenario_mode: str,
     scenario_description: str,
     expected_alert_identifier: str,
+    channel_label: str,
 ) -> None:
     """Renders an executive presentation header summarizing the active attack scenario.
 
@@ -118,6 +119,7 @@ def render_attack_banner(
         scenario_mode (str): Name of the active attack strategy.
         scenario_description (str): Functional goal and mechanism summary.
         expected_alert_identifier (str): Expected DLP detection signature and severity.
+        channel_label (str): Covert-channel name shown in the banner subtitle.
     """
     # Initialize a grid table for alignment
     metadata_grid = Table.grid(padding=(0, 2))
@@ -135,7 +137,7 @@ def render_attack_banner(
     shared_console.print(
         Panel(
             metadata_grid,
-            title="[bold yellow]DLP EVALUATION ATTACK SUITE[/] [dim]:: ICMP Covert Channel[/]",
+            title=f"[bold yellow]DLP EVALUATION ATTACK SUITE[/] [dim]:: {channel_label}[/]",
             border_style="cyan",
             expand=False,
         )
