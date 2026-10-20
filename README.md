@@ -173,7 +173,31 @@ For ICMP the 100 malicious sessions are split evenly between `DhavalKapil/icmptu
 | `linux_default_ping` | benign | 38 | 38 FP (`icmp_abnormal_pattern`) |
 | `custom_*_byte_ping` | benign | 27 | 27 FP (pattern / size / oversized) |
 
-TODO DIOGO AND JONAS FOR LAYER 7
+**Layer 7 (HTTP)**
+
+The L7 Web pipeline runs synchronously inline and is deterministic per request, so the quantitative question is detection coverage across payload variants rather than statistical sample size. We evaluate against a hand-crafted corpus of 14 malicious and 10 benign sessions (`evaluation/run_l7_eval.py`), covering credit cards (Visa, Mastercard, Amex, nested JSON, URL-encoded separators), API tokens (AWS, GitHub, OpenAI, JWT, Stripe), Diogo's three evasion attacks (invisible-unicode, gzip, multi-request chunking), and 10 benign patterns that deliberately stress potential false-positive paths (SHA256 hash, UUID, random 16-digit order id, IPv4 pair, long plain text). The scanner is called directly through `decode_body` + `scan_all`, mirroring the exact code path the mitmproxy addon takes on live traffic.
+
+The detector identified 12 of the 14 malicious sessions (85.7%) and flagged 0 of the 10 benign sessions (0% false-positive rate). The two missed sessions are both Diogo's own evasions documented in `docs/l7-evasion-hardening.md`: `visa_gzipped` (compression wrapping, countermeasure available as an opt-in decoder patch) and `visa_chunked` (architectural limit — stateless per-request inspection cannot reassemble secrets split across separate HTTP flows).
+
+| Scenario | Label | Sessions | Outcome |
+| --- | --- | ---: | --- |
+| Credit cards (Visa, Mastercard, Amex, nested JSON, URL-encoded) | malicious | 6 | 6 TP (`luhn_cc`) |
+| API tokens (AWS, GitHub, OpenAI, JWT, Stripe) | malicious | 5 | 5 TP (regex) |
+| `visa_zero_width` (invisible-unicode evasion, patched) | malicious | 1 | 1 TP |
+| `visa_gzipped` (compression evasion, opt-in patch) | malicious | 1 | 1 FN |
+| `visa_chunked` (multi-request split, architectural limit) | malicious | 1 | 1 FN |
+| Normal web/API traffic (10 scenarios) | benign | 10 | 10 TN |
+
+Latency is measured in two complementary ways. The detector pipeline (`decode_body` + `scan_all`) is timed in isolation with `time.perf_counter_ns` across 100 iterations per request. End-to-end latency is sampled from the victim container through the full mitmproxy + Docker stack (10 iterations per scenario, warm-up excluded).
+
+| Measurement | Scenario | Median | Max |
+| --- | --- | ---: | ---: |
+| Pipeline-isolated | all requests | 15 μs | 45 μs |
+| End-to-end | clean passthrough | 5.2 ms | 7.9 ms |
+| End-to-end | blocked card (form) | 3.8 ms | 5.2 ms |
+| End-to-end | blocked card (nested JSON) | 4.0 ms | 5.9 ms |
+
+The two scales differ by roughly three orders of magnitude: the detection logic itself contributes under 0.5% of the request's total round-trip time, with the remainder dominated by TLS termination, mitmproxy forwarding, and Docker's inter-container networking. The blocked-card path is slightly faster than clean passthrough because mitmproxy short-circuits the forward step once a Finding is produced, saving one hop to the attacker-side sink. See `evaluation/l7_web/REPORT.md` and `evaluation/l7_web/sessions.csv` for per-scenario detail.
 
 #### 4.2 Qualitative Analysis: Limits, Architectural Trade-offs & Defense-in-Depth
 
