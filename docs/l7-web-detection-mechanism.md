@@ -85,9 +85,7 @@ If all three stages pass, the finding carries the matched substring, its offset 
 
 Not every secret has a known shape. Internal tokens, custom API keys, random session identifiers all look like base64 or hex strings of some length. Regex cannot match "a string of 32 characters with high entropy" because entropy is not a regular property.
 
-The module exports a `shannon_entropy(text)` function that computes bits per character. The planned detector tokenizes the input and emits a Finding for every token with entropy over around 4.5 bits per char at length ≥ 20.
-
-**Status:** `shannon_entropy` is implemented but the `scan()` function currently returns an empty list. The thresholds and the tokenization need to be tuned against the FPR benchmark before this detector is turned on. Covert channel detection (DNS workstream) also uses `shannon_entropy`, which is why the function is factored out.
+The module exports a `shannon_entropy(text)` function that computes bits per character. The `scan()` function tokenizes the input and emits a finding for every token (that has at least 16 characters) with entropy above or equal 4.7 bits per char.
 
 ### 3.5 Alerting and blocking (`addon.py`)
 
