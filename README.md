@@ -405,7 +405,7 @@ For instance :
 
 ## Documentation Index
 
-*The following files are NOT considered to be part of the report, but this list aims at explaining the role of each file.*
+*The following files are NOT considered to be part of the report (except for the appendix `docs/AI_USE.md`), but this list aims at explaining the role of each file.*
 
 - **[docs/architecture.md](docs/architecture.md)**: Full network topology, container orchestration, routing, and interception design.
 - **[docs/demo_guide.md](docs/demo_guide.md)**: End-to-end evaluation cheat sheet and demo steps.
@@ -418,6 +418,8 @@ For instance :
 ## Ethics & Usage
 
 Academic project. Do not deploy or execute against external networks without explicit authorization. See [LICENSE.md](LICENSE.md).
+
+**Report appendix :** *Please refer to `docs/AI_USE.md` for our policy regarding AI-powered tools.*
 
 ## References
 
