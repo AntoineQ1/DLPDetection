@@ -69,7 +69,7 @@ Some secrets have fixed, well-known shapes. AWS access key IDs always start with
 
 The `regex_rules.RULES` list holds these patterns. Each rule has a `rule_id` (what shows up in the alert), a compiled `re.Pattern`, and a severity. The `scan()` function runs each pattern over the input text with `finditer` and emits a `Finding` for every match.
 
-The concrete patterns were derived independently from documentation, blogs and other websites. These are kept in a central list rather than hardcoded per detector so that adding a new rule is a one-line change. This is even an easier change if we consider that its possible to copy directly regexes from projects such as *Gitleaks* and others, but we decided to derive some regexes by ourselves to prevent eventual licensing constraints from those projects. 
+The concrete patterns were derived independently from documentation, blogs and other websites. These are kept in a central list rather than hardcoded per detector so that adding a new rule is a one-line change. This is even an easier change if we consider that it's possible to copy directly regexes from projects such as *Gitleaks* and others, but we decided to derive some regexes by ourselves to prevent eventual licensing constraints from those projects. 
 
 ### 3.3 Credit-card detection (`luhn` + issuer prefix)
 
@@ -85,7 +85,7 @@ If all three stages pass, the finding carries the matched substring, its offset 
 
 Not every secret has a known shape. Internal tokens, custom API keys, random session identifiers all look like base64 or hex strings of some length. Regex cannot match "a string of 32 characters with high entropy" because entropy is not a regular property.
 
-The module exports a `shannon_entropy(text)` function that computes bits per character. The `scan()` function tokenizes the input and emits a finding for every token (that has at least 16 characters) with entropy above or equal 4.7 bits per char.
+The module exports a `shannon_entropy(text)` function that computes bits per character. The `scan()` function tokenizes the input and emits a finding for every token (that has at least 16 characters) with entropy at or above 4.7 bits per char.
 
 ### 3.5 Alerting and blocking (`addon.py`)
 
