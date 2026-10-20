@@ -321,15 +321,15 @@ def _write_report(path: Path, sessions: list[dict], requests: list[dict]) -> Non
     for r in requests:
         if r["latency_us_median"] is None or r["latency_us_p95"] is None:
             raise ValueError(f"Missing latency for request {r['id']}")
-        latencies_us = [r["latency_us_median"]]
+
+    latencies_us = [r["latency_us_median"] for r in requests]
     median_us = int(statistics.median(latencies_us))
     p95_us = (
         int(statistics.quantiles(latencies_us, n=20)[18])
         if len(latencies_us) >= 20 else int(max(latencies_us))
     )
 
-    for r in sessions:
-        scenarios = sorted({(r["scenario"], r["label"], r["outcome"])})
+    scenarios = sorted({(r["scenario"], r["label"], r["outcome"]) for r in sessions})
 
     lines: list[str] = []
     lines.append("# L7 Web DLP detector evaluation (result tables)\n")
@@ -363,6 +363,11 @@ def _write_report(path: Path, sessions: list[dict], requests: list[dict]) -> Non
     lines.append(f"| Median per-request latency | {median_us} us |")
     lines.append(f"| p95 per-request latency | {p95_us} us |")
     lines.append(f"| Requests measured | {len(requests)} |\n")
+
+    lines.append("End-to-end latency through the full mitmproxy stack is measured "
+                 "out-of-band (victim container -> gateway -> attacker sink via "
+                 "`curl`) and reported in the main `README.md` section 4.1 "
+                 "alongside the pipeline-isolated numbers above.\n")
 
     path.write_text("\n".join(lines), encoding="utf-8")
 
