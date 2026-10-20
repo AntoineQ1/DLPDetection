@@ -49,6 +49,17 @@ to its own sample.
 | ICMP | 100 | 100 | 315 | 200 |
 | L7 Web (HTTP) | 10 | 14 | 10 | 15 |
 
+## Results
+
+Session-level outcomes, current sample (full per-scenario breakdowns are in
+each protocol's section below, and in the generated `REPORT.md` files):
+
+| Protocol | TP | FN | FP | TN | Malicious detection rate | Benign alert (false-positive) rate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| DNS | 94 | 6 | 30 | 70 | 94.0% | 30.0% |
+| ICMP | 100 | 0 | 27 | 73 | 100.0% | 27.0% |
+| L7 Web (HTTP) | 12 | 2 | 0 | 10 | 85.7% | 0.0% |
+
 ---
 
 ## ICMP evaluation
@@ -131,6 +142,30 @@ uv run python -m evaluation.icmp.generate_icmptunnel_sessions --tool-dir /tmp/dl
 uv run python -m evaluation.icmp.generate_smendowski_sessions
 uv run python -m evaluation.run_covert_eval
 ```
+
+### Results by scenario
+
+| Scenario | TP | FN | FP | TN |
+| --- | ---: | ---: | ---: | ---: |
+| custom_32_byte_ping | 0 | 0 | 3 | 0 |
+| custom_48_byte_ping | 0 | 0 | 1 | 0 |
+| custom_56_byte_ping | 0 | 0 | 7 | 0 |
+| custom_64_byte_ping | 0 | 0 | 3 | 0 |
+| custom_100_byte_ping | 0 | 0 | 7 | 0 |
+| custom_120_byte_ping | 0 | 0 | 6 | 0 |
+| linux_default_ping | 0 | 0 | 0 | 38 |
+| windows_default_ping | 0 | 0 | 0 | 35 |
+| icmptunnel_oversized | 20 | 0 | 0 | 0 |
+| icmptunnel_tiny | 10 | 0 | 0 | 0 |
+| icmptunnel_burst | 10 | 0 | 0 | 0 |
+| icmptunnel_secret | 10 | 0 | 0 | 0 |
+| smendowski_base64_exfil | 50 | 0 | 0 | 0 |
+
+All 27 false positives are `custom_*_byte_ping` (random-byte, non-default-size
+payloads — see the benign-session description above and
+`docs/icmp-evasion-hardening.md`). `linux_default_ping` and
+`windows_default_ping` are both 100% clean; every malicious scenario from
+both tools is caught.
 
 ### Connection to related research
 
@@ -216,6 +251,26 @@ PYTHONPATH=/tmp/dlp_dns_tool_deps python -m evaluation.dns.generate_tool_session
 uv run python -m evaluation.run_covert_eval
 ```
 
+### Results by scenario
+
+| Scenario | TP | FN | FP | TN |
+| --- | ---: | ---: | ---: | ---: |
+| ordinary_lookup | 0 | 0 | 0 | 50 |
+| service_discovery | 0 | 0 | 0 | 20 |
+| ordinary_lookup_burst | 0 | 0 | 10 | 0 |
+| cache_busting | 0 | 0 | 20 | 0 |
+| tool_text_exfil | 44 | 6 | 0 | 0 |
+| tool_file_exfil | 49 | 0 | 0 | 0 |
+| iodine_reference | 1 | 0 | 0 | 0 |
+
+All 30 false positives are `cache_busting` (20, tripping `DNS_LONG_QNAME` on
+the deliberately long asset hostname) and `ordinary_lookup_burst` (10,
+tripping `DNS_TUNNEL_VOLUME` on the 10-query burst). The 6 missed malicious
+sessions are all short, single-query `tool_text_exfil` transfers whose
+encoded names stay below the length/entropy thresholds while making too few
+queries to trip the volume rule. `iodine_reference` and every
+`tool_file_exfil` session are caught.
+
 ### Connection to related research
 
 The selected generators produce data carried in DNS queries, exposing packet
@@ -273,6 +328,41 @@ To regenerate the L7 results:
 ```bash
 uv run python -m evaluation.run_l7_eval
 ```
+
+### Results by scenario
+
+| Scenario | Label | Outcome |
+| --- | --- | --- |
+| amex_15_digits | malicious | TP |
+| aws_access_key | malicious | TP |
+| github_token | malicious | TP |
+| jwt_token | malicious | TP |
+| mastercard_plain | malicious | TP |
+| openai_user_key | malicious | TP |
+| stripe_test_key | malicious | TP |
+| visa_dashed | malicious | TP |
+| visa_nested_json | malicious | TP |
+| visa_plain | malicious | TP |
+| visa_url_encoded_dashes | malicious | TP |
+| visa_with_zero_width_spaces | malicious | TP |
+| visa_gzipped | malicious | **FN** |
+| visa_multi_request_chunking | malicious | **FN** |
+| ecommerce_price_qty | benign | TN |
+| email_in_form | benign | TN |
+| ipv4_addresses_in_body | benign | TN |
+| lorem_ipsum_plain_text | benign | TN |
+| normal_form_submission | benign | TN |
+| normal_json_api_response | benign | TN |
+| random_16digit_order_id | benign | TN |
+| sha256_hex_hash | benign | TN |
+| ups_tracking_number | benign | TN |
+| uuid_in_query | benign | TN |
+
+The two misses are exactly the two evasion vectors the baseline detector is
+not expected to catch (gzip compression and multi-request chunking, see
+`docs/l7-evasion-hardening.md`); the third evasion vector tested
+(zero-width-space spacing) is caught. Every credit-card and API-token
+scenario in cleartext is caught, and every benign scenario is clean (0 FP).
 
 ---
 
