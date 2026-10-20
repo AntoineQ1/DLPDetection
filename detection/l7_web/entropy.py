@@ -1,23 +1,15 @@
-"""Shannon-entropy based detection of high-entropy tokens (Workstream B).
-
-`shannon_entropy` is the shared math primitive, also reused by the covert
-channel detectors. Thresholds and how text is split into tokens stay in each
-detector.
-"""
-
-from __future__ import annotations
-
 import math
-
 import os
 import re
 
 from detection.common.types import Severity
+
 from . import Finding
 
 ENTROPY_THRESHOLD = float(os.environ.get("L7_ENTROPY_THRESHOLD", "4.7"))
 ENTROPY_MIN_CHARS = int(os.environ.get("L7_ENTROPY_MIN_CHARS", "16"))
 _TOKEN_RE = re.compile(r"[A-Za-z0-9+/=._\-]{16,}")
+
 
 def shannon_entropy(text: str) -> float:
     """Per-character Shannon entropy in bits."""
@@ -36,12 +28,15 @@ def shannon_entropy(text: str) -> float:
 # log_2(62) ~= 5.95
 #  2.14 < entropy of normal english text < 4.76
 # So a good threshold is 4.70
-# It will detect some false positives but that is beter than letting a possible normal entropy token pass
+# It will detect some false positives but that is beter than letting a possible normal entropy secret pass
 def scan(text: str) -> list[Finding]:
     hits: list[Finding] = []
     for m in _TOKEN_RE.finditer(text):
         token = m.group(0)
-        if len(token) >= ENTROPY_MIN_CHARS and shannon_entropy(token) >= ENTROPY_THRESHOLD:
+        if (
+            len(token) >= ENTROPY_MIN_CHARS
+            and shannon_entropy(token) >= ENTROPY_THRESHOLD
+        ):
             hits.append(
                 Finding(
                     rule_id="high_entropy",

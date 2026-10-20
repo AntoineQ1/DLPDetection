@@ -1,8 +1,3 @@
-"""Unit tests for L7 detectors (Workstream B).
-
-Direct calls into `detection.l7_web` — no mitmproxy needed.
-"""
-
 from detection.common.types import Severity
 from detection.l7_web import scan_all
 from detection.l7_web.luhn import luhn_valid

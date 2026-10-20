@@ -46,7 +46,8 @@ class WebDlpAddon:
                 destination=target_host,
                 details={
                     "findings": [
-                        {"rule_id": f.rule_id, "matched": mask(f.matched)} for f in findings
+                        {"rule_id": f.rule_id, "matched": mask(f.matched)}
+                        for f in findings
                     ]
                 },
                 blocked=True,

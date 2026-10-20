@@ -11,7 +11,7 @@ Generative AI was strictly restricted to secondary tasks:
 - **Background Reading & Source Exploration:** Summarizing technical papers and contextualizing research material related to network DLP.
 - **Unit Tests:** Generating unit tests under `tests/`. 
 - **Terminal UI & Cosmetic Formatting:** Generating presentation helpers and terminal styling tools under `ui/` using the `rich` library (progress bars, status panels, alert cards, etc.).
-- **Artifact reuse for evaluation:** Asisting to reproduce and configure external tools to perform evaluation of the DNS/ICMP protocols.
+- **Artifact reuse for evaluation:** Assisting to reproduce and configure the external tools in order to perform the evaluation of the DNS/ICMP protocols.
 
 ## 2. Code Generation & Attribution
 

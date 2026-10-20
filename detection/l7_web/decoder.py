@@ -1,22 +1,15 @@
-"""HTTP body decoder for the L7 web DLP (Workstream B).
-
-Handles application/x-www-form-urlencoded and application/json bodies;
-anything else is returned as plain text. multipart/form-data is out of scope.
-"""
-
-from __future__ import annotations
-
 import json
+import logging
 from urllib.parse import parse_qs
+
+log = logging.getLogger(__name__)
 
 
 def _normalize_content_type(content_type: str) -> str:
-
     return content_type.split(";", 1)[0].strip().lower()
 
 
 def _flatten_scalars(obj) -> list[str]:
-    """Recursively collect every string or numeric value inside a JSON-shaped object."""
     if isinstance(obj, (str, int, float)):
         return [str(obj)]
     if isinstance(obj, dict):
@@ -47,16 +40,15 @@ def decode_body(content: bytes, content_type: str) -> list[str]:
             for value in parsed.values():
                 parsed_list.extend(_flatten_scalars(value))
             return parsed_list
-
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("urlencoded parse failed, falling back to plain text: %s", e)
 
     if ct == "application/json":
         try:
             content_str = content.decode("utf-8", errors="replace")
             return _flatten_scalars(json.loads(content_str))
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("json parse failed, falling back to plain text: %s", e)
 
     # Uncomment the next 3 lines to show the fix to the gzip evasion attack:
     # import gzip as _gzip
