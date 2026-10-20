@@ -1,5 +1,5 @@
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,6 +25,7 @@ MAX_TIMESTAMP_DRIFT_SECONDS = 120.0
 # Default rate limits (standard ping is around 1 pkt/s)
 DEFAULT_WINDOW_SECONDS = 1.0
 DEFAULT_MAX_REQUESTS_PER_WINDOW = 4
+DEFAULT_MAX_TRACKED_IPS = 10000
 
 
 @dataclass(frozen=True)
@@ -54,10 +55,12 @@ class ICMPRateTracker:
         self,
         window_seconds: float = DEFAULT_WINDOW_SECONDS,
         max_requests: int = DEFAULT_MAX_REQUESTS_PER_WINDOW,
+        max_tracked_ips: int = DEFAULT_MAX_TRACKED_IPS,
     ) -> None:
         self.window_seconds = window_seconds
         self.max_requests = max_requests
-        self._history: dict[str, deque[float]] = defaultdict(deque)
+        self.max_tracked_ips = max_tracked_ips
+        self._history: OrderedDict[str, deque[float]] = OrderedDict()
 
     def record_and_check(
         self,
@@ -67,9 +70,15 @@ class ICMPRateTracker:
         now = time.time() if timestamp is None else timestamp
         window_start = now - self.window_seconds
 
-        queue = self._history[source_ip]
+        if source_ip in self._history:
+            queue = self._history[source_ip]
+            self._history.move_to_end(source_ip)
+        else:
+            if len(self._history) >= self.max_tracked_ips:
+                self._history.popitem(last=False)
+            queue = deque()
+            self._history[source_ip] = queue
 
-        # Drop timestamps older than the sliding window
         while queue and queue[0] <= window_start:
             queue.popleft()
 
