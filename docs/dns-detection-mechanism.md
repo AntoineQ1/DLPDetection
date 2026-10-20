@@ -36,8 +36,8 @@ The modes below map onto that ladder:
 
 The `covert-detector` container runs with `network_mode: "service:gateway"`, so it shares the gateway's network namespace. The gateway is **dual-homed**:
 
-- `internal_net` → `172.20.0.2` (victim side, `172.20.0.0/24`)
-- `external_net` → `172.21.0.2` (attacker side, `172.21.0.0/24`)
+- `internal_net` -> `172.20.0.2` (victim side, `172.20.0.0/24`)
+- `external_net` -> `172.21.0.2` (attacker side, `172.21.0.0/24`)
 
 `sniffer.py::pick_interfaces()` prefers the interface whose IPv4 starts with `172.20.0.` (the `INTERNAL_SUBNET_PREFIX`). This is deliberate:
 
@@ -118,7 +118,7 @@ State is kept per `(source_ip, apex)`:
 - the count of unique subdomains currently in the window;
 - a `volume_alerted` flag so an ongoing burst raises **one** alert, not one per query. The flag resets when traffic drops back below the threshold, so a later burst alerts again.
 
-**Why four rules together:** encoding raises entropy (→ rule 3), but a naive attacker stays readable (→ rules 1 & 2); a careful attacker can keep each query short and low-entropy, but volume to a single apex still betrays them (→ rule 4). The gaps of each rule are covered by the others.
+**Why four rules together:** encoding raises entropy (-> rule 3), but a naive attacker stays readable (-> rules 1 & 2); a careful attacker can keep each query short and low-entropy, but volume to a single apex still betrays them (-> rule 4). The gaps of each rule are covered by the others.
 
 ---
 

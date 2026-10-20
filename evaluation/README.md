@@ -39,7 +39,7 @@ Packet counts, sizes, send cadence, and dummy secret tokens are drawn at random
 per run. Benign packet totals therefore shift slightly between seeds.
 
 The L7 Web sample is smaller and hand-crafted on purpose. The L7 pipeline is
-deterministic per request (same input → same findings), so additional samples
+deterministic per request (same input -> same findings), so additional samples
 of the same attack technique add no statistical insight. Breadth of attack
 vectors is what matters, and the 14 malicious scenarios cover six credit-card
 variants, five API-token classes, and three of Diogo's evasion vectors. See
@@ -92,11 +92,11 @@ version) among the traffic sources in the
 [ICMPTend study](https://doi.org/10.32604/cmc.2022.022540). The generator frames
 dummy-file bytes inside IPv4/UDP datagrams and calls the tool's original C
 `send_icmp_packet`; an offline adapter intercepts `sendto` and writes the bytes
-to a PCAP, opening no sockets. Four profiles: **oversized** (random large files →
-`icmp_oversized_payload`), **tiny** (random ≤64 B payloads → `icmp_non_standard_size`),
-**burst** (a random >4-chunk transfer sent sub-second → `icmp_high_frequency`),
+to a PCAP, opening no sockets. Four profiles: **oversized** (random large files ->
+`icmp_oversized_payload`), **tiny** (random ≤64 B payloads -> `icmp_non_standard_size`),
+**burst** (a random >4-chunk transfer sent sub-second -> `icmp_high_frequency`),
 and **secret** (a Luhn-valid dummy card plus a randomly chosen dummy API token,
-left readable by the raw framing → `icmp_sensitive_data_luhn_cc` and token
+left readable by the raw framing -> `icmp_sensitive_data_luhn_cc` and token
 regexes). Capture and per-run profile/hashes: `icmp/icmptunnel_sessions.pcap` and
 `icmp/icmptunnel_manifest.csv` (PCAP SHA-256
 `cc1ab06a4ff270ac78ae982dcd9b7cbd44886d23b6794b71f73719612a55ea47`).
