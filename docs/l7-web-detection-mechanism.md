@@ -4,7 +4,7 @@
 
 The L7 engine runs inside mitmproxy and scans every outbound HTTP(S) request for credit cards, API tokens, and high-entropy strings. If any rule fires, the request is logged and dropped with a 403.
 
-mitmproxy terminates TLS with its own CA certificate. The victim container trusts this CA at build time, matching the enterprise setup where IT pushes a corporate CA to every laptop. For non-TLS traffic the pipeline is identical, minus the TLS step. The techniques themselves are standard: Luhn's checksum from 1954, regex patterns reused from *Gitleaks* and *Trufflehog*, Shannon entropy from 1948.
+mitmproxy terminates TLS with its own CA certificate. The victim container trusts this CA at build time, matching the enterprise setup where IT pushes a corporate CA to every laptop. For non-TLS traffic the pipeline is identical, minus the TLS step. The techniques themselves are standard: Luhn's checksum from 1954, derived regex patterns from specifications, Shannon entropy from 1948.
 
 ## 2. Threat Model
 
@@ -23,7 +23,7 @@ mitmproxy terminates TLS with its own CA certificate. The victim container trust
                                  v
              +---------------------------------------+
              | Stage 1: Collect scannable text       |
-             | - URL path & query parameters         |
+             | - URL path, query parameters & headers|
              | - Request body via decode_body()      |
              |   -> urlencoded / JSON / plain text   |
              +---------------------------------------+
@@ -69,7 +69,7 @@ Some secrets have fixed, well-known shapes. AWS access key IDs always start with
 
 The `regex_rules.RULES` list holds these patterns. Each rule has a `rule_id` (what shows up in the alert), a compiled `re.Pattern`, and a severity. The `scan()` function runs each pattern over the input text with `finditer` and emits a `Finding` for every match.
 
-The concrete patterns were derived independently from documentation, blogs and other websites. These are kept in a central list rather than hardcoded per detector so that adding a new rule is a one-line change. This is even a easier change if we consider that its possible to copy directly regexes from projects such as *Gitleaks* and others, but we decided to derive some regexes by ourselves to prevent eventual licensing constraints from those projects. 
+The concrete patterns were derived independently from documentation, blogs and other websites. These are kept in a central list rather than hardcoded per detector so that adding a new rule is a one-line change. This is even an easier change if we consider that its possible to copy directly regexes from projects such as *Gitleaks* and others, but we decided to derive some regexes by ourselves to prevent eventual licensing constraints from those projects. 
 
 ### 3.3 Credit-card detection (`luhn` + issuer prefix)
 
@@ -97,7 +97,7 @@ Four scenarios cover the detectors end to end. The exact `curl` commands and exp
 
 - **Benign baseline:** `user=alice&status=ok`. Nothing to find. Verifies that normal form POSTs pass through with 200 OK and no alert.
 - **Credit-card leak:** `card=4111-1111-1111-1111`. Hits the regex pre-filter, passes Luhn, matches Visa by prefix and length. Blocked, alert `luhn_cc`.
-- **AWS key leak:** `token=AKIAIOSFODNN7EXAMPLE`. Caught by the `regex_rules` AWS pattern. Blocked, alert `AWS_ACCESS_KEY_ID`.
+- **AWS key leak:** `token=AKIAIOSFODNN7EXAMPLE`. Caught by the `regex_rules` AWS pattern. Blocked, alert `AWS Token`.
 - **URL-encoded card leak:** `card=4111%2D1111%2D1111%2D1111`. Without the decoder, the pre-filter would miss this. With the decoder, the value is unescaped before scanning and the full pipeline runs normally.
 
 In addition, the `tests/test_l7_web.py` unit test suite covers:
