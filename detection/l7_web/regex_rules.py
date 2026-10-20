@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
-from . import Finding, Severity
-
 from detection.common.types import Severity
+
+from . import Finding
+
 
 class RegexRule(NamedTuple):
     rule_id: str
@@ -20,7 +21,9 @@ RULES: list[RegexRule] = [
     # AWS
     RegexRule(
         rule_id="AWS Token",
-        pattern=re.compile(r"(?:ABIA|ACCA|AGPA|AIDA|AIPA|AKIA|ANPA|ANVA|APKA|AROA|ASCA|ASIA)[0-9A-Z]{16}"),
+        pattern=re.compile(
+            r"(?:ABIA|ACCA|AGPA|AIDA|AIPA|AKIA|ANPA|ANVA|APKA|AROA|ASCA|ASIA)[0-9A-Z]{16}"
+        ),
         severity=Severity.HIGH,
     ),
     # GitHub

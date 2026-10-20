@@ -8,16 +8,17 @@ detector.
 from __future__ import annotations
 
 import math
-
 import os
 import re
 
 from detection.common.types import Severity
+
 from . import Finding
 
 ENTROPY_THRESHOLD = float(os.environ.get("L7_ENTROPY_THRESHOLD", "4.7"))
 ENTROPY_MIN_CHARS = int(os.environ.get("L7_ENTROPY_MIN_CHARS", "16"))
 _TOKEN_RE = re.compile(r"[A-Za-z0-9+/=._\-]{16,}")
+
 
 def shannon_entropy(text: str) -> float:
     """Per-character Shannon entropy in bits."""
@@ -41,7 +42,10 @@ def scan(text: str) -> list[Finding]:
     hits: list[Finding] = []
     for m in _TOKEN_RE.finditer(text):
         token = m.group(0)
-        if len(token) >= ENTROPY_MIN_CHARS and shannon_entropy(token) >= ENTROPY_THRESHOLD:
+        if (
+            len(token) >= ENTROPY_MIN_CHARS
+            and shannon_entropy(token) >= ENTROPY_THRESHOLD
+        ):
             hits.append(
                 Finding(
                     rule_id="high_entropy",
