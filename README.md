@@ -117,9 +117,30 @@ Standard operating systems generate predictable **ICMP Echo *Request* packets**.
 
 #### 3.2 ICMP Evasion Analysis & Hardening (WS D.1)
 
-An adversarial review of the baseline ICMP detector exposed a validation gap in the Linux-ping whitelist: a packet that the detector accepted as a benign Linux ping could still smuggle data in bytes that were never inspected. The whitelist confirmed only that the payload was 56 bytes long and that its fixed 40-byte tail matched the Linux pattern, but it skipped the first 16 bytes, which hold a timestamp that legitimately changes, and it never looked at the ICMP identifier and sequence fields. This left roughly 20 attacker-controlled bytes in every "benign" ping that tripped none of the structure, rate, or content checks, which is enough for a steady covert exfiltration channel.
+Adversarial testing against the baseline ICMP detector exposed a hidden exfiltration channel inside the "benign" whitelist, an uninspected reply direction, and two robustness gaps in the rate limiter (unbounded memory and a source-spoofing bypass).
 
-The finding was filed as issue #11 and pinned as the regression test `test_whitelisted_linux_ping_prefix_is_still_inspected`. The fix, in commit `ea2ac4c`, now validates the 16-byte timeval prefix and routes the identifier and sequence bytes through the Layer 7 content scanner, closing the channel. The hardening carried a measurable cost: in the offline evaluation it roughly doubled the benign ICMP false-positive rate, from 27% to 65% of sessions, because default Linux pings no longer match the expected pattern and now trip `icmp_abnormal_pattern`, while malicious detection stayed at 100%. This detection-versus-precision trade-off is quantified in section 4.1.
+##### Evasion & Hardening Summary
+
+| # | Vector | Technique & Target Rule | Category | Status |
+| --- | --- | --- | --- | --- |
+| **1** | **Whitelisted-prefix exfiltration** | ~20 encoded bytes hidden in the unvalidated 16-byte Linux timeval prefix + ICMP id/seq of an otherwise-benign ping (evades all three checks) | Algorithmic Flaw | **Patched** ([#11](https://github.com/AntoineQ1/DLPDetection/issues/11), commit `ea2ac4c`) |
+| **2** | **Echo Reply exfiltration** | Smuggling data in outbound Echo *Reply* (type 0), which the parser drops before any rule runs | Architectural Limit | *Open* ([#9](https://github.com/AntoineQ1/DLPDetection/issues/9)) |
+| **3** | **Rate-tracker exhaustion** | Spoofing many source IPs to grow the unbounded per-source history until OOM | Robustness Flaw | **Patched** ([#13](https://github.com/AntoineQ1/DLPDetection/issues/13) / [PR #15](https://github.com/AntoineQ1/DLPDetection/pull/15)) |
+| **4** | **Source-IP spoofing** | Forging a different source IP per packet so each looks like a single ping, defeating the per-source rate window (`icmp_high_frequency`) | Architectural Limit | *Documented Limitation* |
+
+##### Key Vulnerabilities & Applied Patches
+
+- **Whitelisted-prefix exfiltration (Patched - #11, commit `ea2ac4c`):**
+  - *Bypass:* the Linux whitelist checked only the fixed 40-byte tail, never the 16-byte timeval prefix or the id/seq fields - ~20 attacker-controlled bytes per "benign" ping, tripping none of the structure/rate/content checks. Pinned as the regression test `test_whitelisted_linux_ping_prefix_is_still_inspected`.
+  - *Hardening:* validate the timeval prefix and route the id/seq bytes through the L7 content scanner, closing the channel; malicious detection stays at 100%.
+  - *Measurement correction:* the fix first appeared to double the benign false-positive rate from 27% to 65%, but that was a stale-timestamp bug in the evaluation's own benign Linux-ping fixture ([PR #14](https://github.com/AntoineQ1/DLPDetection/pull/14)); its real cost on genuine Linux pings is ~0%, and the true benign rate is 27% (§4.1).
+
+- **Open items & fundamental bounds:**
+  - *Echo Reply ([#9](https://github.com/AntoineQ1/DLPDetection/issues/9)):* `parse_icmp_echo` inspects only type 8, so outbound type-0 replies - the classic ICMP-tunnel direction - are never scanned.
+  - *Rate-tracker memory ([#13](https://github.com/AntoineQ1/DLPDetection/issues/13)):* the per-source history was unbounded; a bounded-cache fix is tracked in [PR #15](https://github.com/AntoineQ1/DLPDetection/pull/15).
+  - *Source-IP spoofing:* the rate rule keys state on an unvalidated source IP, so spraying spoofed sources beats `icmp_high_frequency` (and feeds the #13 memory growth); this is handled downstream, not at the passive sniffer.
+
+*(Details are available in `docs/icmp-evasion-hardening.md`).*
 
 #### 3.3 DNS Covert Tunnel Detection (WS C)
 
@@ -171,10 +192,15 @@ Adversarial testing against the baseline DNS detector uncovered algorithmic flaw
 
 #### 4.1 Quantitative Benchmarking & Performance Metrics
 
-**DNS and ICMP**
-We benchmark the DNS and ICMP detectors offline by replaying captures through the production parsers and detection functions. Each capture is built by calling the covert-channel tools' own packet builders with seeded dummy inputs, so no traffic is ever transmitted, and the measurement reflects the deployed detector rather than a re-implementation. The primary metric is the per-session classification (true/false positive and true/false negative) over 100 malicious and 100 benign sessions per protocol, where a session counts as detected if any of its packets raises an alert. The benign traffic is deterministic local fixtures that deliberately include borderline-but-legitimate patterns, so the false-positive rates describe this designed sample rather than deployment conditions.
+**DNS**
 
-For DNS the 100 malicious sessions come from two independent tools: 99 from `zrckr/dns-tunnel` (50 text transfers and 49 file transfers) and one recorded transfer from iodine, a second tool that also appears in the peer-reviewed literature. The detector identified 94 of the 100 malicious sessions (94%) and flagged 30 of the 100 benign sessions (a 30% false-positive rate on the adversarial mix). The six missed sessions are all short, single-query text transfers whose encoded names stay below the length and entropy thresholds while making too few queries to trip the volume rule.
+The DNS detector is benchmarked offline by replaying captured tunnel queries through the production `parse_dns_query` + `DnsTunnelDetector` path. We evalute against 100 malicious and 100 benign sessions, each session is classified TP/FP/TN/FN (detected if any of its queries raises an alert). The benign set is deterministic local lookups that deliberately include borderline-but-legitimate patterns (long cache-busting hostnames, 10-query bursts), so the false-positive rate describes this designed sample rather than deployment conditions.
+
+*DNS results.* The 100 malicious sessions come from two independent tools: 99 from [`zrckr/dns-tunnel`](https://github.com/zrckr/dns-tunnel) (50 text transfers and 49 file transfers) and one recorded transfer from [iodine](https://github.com/Korving-F/dns-tunnel-dataset), a second tool that also appears in the peer-reviewed literature. The detector identified 94 of the 100 malicious sessions (94%) and flagged 30 of the 100 benign sessions (a 30% false-positive rate on the adversarial mix). The six missed sessions are all short, single-query text transfers whose encoded names stay below the length and entropy thresholds while making too few queries to trip the volume rule.
+
+| Metric | TP | FN | FP | TN | Detection (TPR) | False positives (FPR) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| DNS (100 malicious + 100 benign) | 94 | 6 | 30 | 70 | 94% | 30% |
 
 | Scenario | Label | Sessions | Outcome |
 | --- | --- | ---: | --- |
@@ -185,7 +211,16 @@ For DNS the 100 malicious sessions come from two independent tools: 99 from `zrc
 | `cache_busting` | benign | 20 | 20 FP (`DNS_LONG_QNAME`) |
 | `ordinary_lookup_burst` | benign | 10 | 10 FP (`DNS_TUNNEL_VOLUME`) |
 
-For ICMP the 100 malicious sessions are split evenly between `DhavalKapil/icmptunnel` (50 sessions of raw framing) and the Smendowski covert-channel tool (50 sessions of base64 payloads), chosen so that together they exercise all three detection paths. The detector identified every malicious session (100%) and flagged 65 of the 100 benign sessions (a 65% false-positive rate). As explained in §3.2, that elevated benign rate is the direct consequence of hardening the Linux-ping whitelist: default Linux pings now trip `icmp_abnormal_pattern`.
+
+**ICMP**
+
+The ICMP detector is benchmarked the same way, replaying captured Echo packets through `parse_icmp_echo` + `analyze_icmp_message`, with no packets transmitted. Again we evaluate the detector against 100 malicious and 100 benign sessions classified per session (detected if any packet raises an alert). The benign set is deterministic Windows, Linux, and custom-sized diagnostic pings, the custom sizes deliberately chosen to probe the structural false-positive paths.
+
+*ICMP results.* The 100 malicious sessions are split evenly between [`DhavalKapil/icmptunnel`](https://github.com/DhavalKapil/icmptunnel) (50 sessions of raw framing) and the [Smendowski covert-channel tool](https://github.com/Smendowski/hidden-communication-using-covert-channels) (50 sessions of base64 payloads), chosen so that together they exercise all three detection paths. The detector identified every malicious session (100%) and flagged 27 of the 100 benign sessions (a 27% false-positive rate). An earlier run reported 65%, but that was a stale-timestamp bug in the benign Linux-ping fixture rather than a cost of the whitelist hardening (see §3.2); once corrected, default Linux pings are classified benign and the residual false positives are the deliberately adversarial `custom_*_byte_ping` sizes.
+
+| Metric | TP | FN | FP | TN | Detection (TPR) | False positives (FPR) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ICMP (100 malicious + 100 benign) | 100 | 0 | 27 | 73 | 100% | 27% |
 
 | Scenario | Label | Sessions | Outcome |
 | --- | --- | ---: | --- |
@@ -195,7 +230,7 @@ For ICMP the 100 malicious sessions are split evenly between `DhavalKapil/icmptu
 | `icmptunnel_secret` | malicious | 10 | 10 TP (content) |
 | `smendowski_base64_exfil` | malicious | 50 | 50 TP (content) |
 | `windows_default_ping` | benign | 35 | 35 TN |
-| `linux_default_ping` | benign | 38 | 38 FP (`icmp_abnormal_pattern`) |
+| `linux_default_ping` | benign | 38 | 38 TN |
 | `custom_*_byte_ping` | benign | 27 | 27 FP (pattern / size / oversized) |
 
 **Layer 7 (HTTP)**
@@ -413,17 +448,17 @@ https://github.com/d4rkmen/M5Gemini/issues/15
 [Stripe] https://gitlab.com/gitlab-org/gitlab/-/work_items/458019 and https://docs.stripe.com/api/authentication  
 [Cloudflare] https://developers.cloudflare.com/changelog/post/2026-08-26-service-token-secret-format/ and https://developers.cloudflare.com/fundamentals/api/get-started/token-formats/  
 
-### 3. Workstream C: ICMP Covert Channel Detection
+### 3. Workstream C&D: ICMP Covert Channel Detection
 
 - Sayadi, A., Lehsaini, M., & Bitam, S. (2017). *Detection of Covert Channels Over ICMP Protocol*. In 2017 IEEE/ACS 14th International Conference on Computer Systems and Applications (AICCSA) (pp. 573–579). IEEE.
 - Tu, L. et al. (2022). ICMPTend: ICMP covert-tunnel detection using SVM. Computers, Materials & Continua 73(1). https://doi.org/10.32604/cmc.2022.022540
 - Fokin, D. and Yevdokymenko, M. (2025). An Overview of Covert Channels in Software Defined Networks. IEEE IDAACS. https://doi.org/10.1109/IDAACS68557.2025.11322109
 
-### 4. Workstream C: DNS Covert Channel Detection
+### 4. Workstream C&D: DNS Covert Channel Detection
 
 - Chen, S. et al. (2021). A study of DNS covert-channel detection. Computers & Security 104, 102095. https://doi.org/10.1016/j.cose.2020.102095
 - Zheng et al. (2025). Evaluation of DNS tunnel tools and reproducible sample generation. https://www.joca.cn/EN/10.11772/j.issn.1001-9081.2024070972
-- Tools: zrckr/dns-tunnel; the iodine capture from Korving-F/dns-tunnel-dataset; DhavalKapil/icmptunnel; and the Smendowski hidden-communication-using-covert-channels project. 
+- Tools: [zrckr/dns-tunnel](https://github.com/zrckr/dns-tunnel); the iodine capture from [Korving-F/dns-tunnel-dataset](https://github.com/Korving-F/dns-tunnel-dataset); [DhavalKapil/icmptunnel](https://github.com/DhavalKapil/icmptunnel); and the [Smendowski hidden-communication-using-covert-channels](https://github.com/Smendowski/hidden-communication-using-covert-channels) project. 
 
 ## Individual contributions
 
