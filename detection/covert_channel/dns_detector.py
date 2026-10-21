@@ -120,6 +120,19 @@ def extract_features(qname: str) -> QnameFeatures:
     sub_labels = labels[:-APEX_LABELS] if len(labels) > APEX_LABELS else []
     subdomain = "".join(sub_labels)
     longest = max((len(l) for l in labels), default=0)
+
+    global_entropy = (
+        shannon_entropy(subdomain) if len(subdomain) >= ENTROPY_MIN_CHARS else 0.0
+    )
+
+    long_sub_labels = [l for l in sub_labels if len(l) >= ENTROPY_MIN_CHARS]
+    max_label_entropy = max(
+        (shannon_entropy(l) for l in long_sub_labels),
+        default=0.0,
+    )
+
+    effective_entropy = max(global_entropy, max_label_entropy)
+
     return QnameFeatures(
         qname=qname,
         apex=apex,
@@ -127,7 +140,7 @@ def extract_features(qname: str) -> QnameFeatures:
         sub_labels=sub_labels,
         longest_label=longest,
         total_len=len(qname),
-        entropy=shannon_entropy(subdomain),
+        entropy=effective_entropy,
     )
 
 
